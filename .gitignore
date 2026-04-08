@@ -1,0 +1,45 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Console app dependencies / build output
+_console/app/node_modules/
+_console/app/dist/
+_console/app/dist-ssr/
+_console/app/*.tsbuildinfo
+_console/app/*.local
+
+# Tauri / Rust build output
+_console/src-tauri/target/
+
+# Console runtime cache
+_console/runtime/snapshots/*
+_console/runtime/logs/*
+!_console/runtime/snapshots/.gitkeep
+!_console/runtime/logs/.gitkeep
+
+# Packaged desktop release artifacts
+_console/releases/

@@ -1,0 +1,59 @@
+interface BrandMarkProps {
+  size?: number
+}
+
+export function BrandMark({ size = 36 }: BrandMarkProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 72 72"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <rect x="6" y="6" width="60" height="60" rx="20" fill="url(#CodeWinter-bg)" />
+      <path
+        d="M22 23.5C22 19.9101 24.9101 17 28.5 17H39"
+        stroke="#0F172A"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M39 17C44.5228 17 49 21.4772 49 27V30.5"
+        stroke="#0F172A"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M50.5 31C50.5 35.9706 46.4706 40 41.5 40H35.5"
+        stroke="#0F172A"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M33.7067 44.2977C31.9467 42.5377 29.0931 42.5377 27.3331 44.2977L21.6007 50.0301C19.8407 51.7901 19.8407 54.6437 21.6007 56.4037C23.3607 58.1637 26.2143 58.1637 27.9743 56.4037L33.7067 50.6713C35.4667 48.9113 35.4667 46.0577 33.7067 44.2977Z"
+        fill="#F97316"
+      />
+      <path
+        d="M35.6 41.9L29.2 48.3"
+        stroke="#EA580C"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M34.8 41L39.3 36.5"
+        stroke="#0F172A"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <circle cx="46" cy="46" r="2.8" fill="#F97316" />
+      <defs>
+        <linearGradient id="CodeWinter-bg" x1="10" y1="10" x2="62" y2="62" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFF7ED" />
+          <stop offset="1" stopColor="#FFE4CC" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
