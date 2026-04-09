@@ -1,3 +1,7 @@
+<p align="right">
+  English · <a href="./README.zh-CN.md">简体中文</a>
+</p>
+
 <div align="center">
   <h1>CodeWinter</h1>
   <p><strong>Portable control plane for multi-thread AI coding.</strong></p>
@@ -13,8 +17,6 @@
 
 > **CodeWinter** is a portable control plane for making multiple AI threads collaborate like a managed engineering team.  
 > It gives manager threads, execution threads, runtime visibility, project memory, and instance migration a single operating model.
-
-简短中文定位：**CodeWinter** 是一套面向真实研发场景的多线程 AI 协作控制系统，不只是提示词集合，也不只是某一个固定会话。
 
 The name comes from **code + winter**.  
 **CodeWinter** is the brand; the system itself is designed as a portable, long-running collaboration control plane.
