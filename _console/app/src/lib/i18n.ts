@@ -41,17 +41,17 @@ export function explainRefreshStatus(status: string, language: Language) {
   switch (status) {
     case 'refreshing':
       return language === 'zh'
-        ? 'Console 正在重新构建最新快照。'
-        : 'The console is rebuilding the latest snapshot.'
+        ? 'Console 正在重建最新快照，界面会在下一份稳定投影视图准备好之后自然更新。'
+        : 'The console is rebuilding the latest snapshot and will update after the next stable projection is ready.'
     case 'degraded':
       return language === 'zh'
-        ? '最近一次刷新虽然成功，但当前快照里仍包含基线告警、模板态信号或不完整的运行态数据。'
-        : 'The last refresh succeeded, but the current snapshot still contains baseline warnings, template-state signals, or incomplete runtime data.'
+        ? '最近一次刷新虽然成功，但当前快照仍包含基线警告、模板态信号，或运行态数据还不完整。'
+        : 'The latest refresh succeeded, but the current snapshot still contains baseline warnings, template-state signals, or incomplete runtime data.'
     case 'idle':
     default:
       return language === 'zh'
-        ? '当前快照状态正常，没有发现需要额外提示的刷新问题。'
-        : 'The current snapshot is healthy and no refresh warnings are active.'
+        ? '当前快照状态健康，没有额外的刷新级问题。'
+        : 'The current snapshot is healthy and no refresh-level issues are active.'
   }
 }
 
@@ -71,28 +71,28 @@ export function explainReleaseChannel(channel: string, language: Language) {
   switch (channel.toLowerCase()) {
     case 'stable':
       return language === 'zh'
-        ? '这是一版可默认采用的稳定发布，兼容承诺更强。'
-        : 'This release is stable and is the default adoption target with stronger compatibility guarantees.'
+        ? '这是当前可默认采用的稳定发布线，兼容承诺和迁移边界都更强。'
+        : 'This is the default stable release line with stronger compatibility and migration guarantees.'
     case 'candidate':
       return language === 'zh'
-        ? '这是一版候选发布，主结构已经基本收敛，适合在真实项目中试点验证。'
-        : 'This release is a candidate build: the main structure has mostly settled and is suitable for real-project pilots.'
+        ? '这是候选发布线，主结构已经基本收敛，适合进入真实项目试点。'
+        : 'This is a candidate release line: the main structure has largely settled and is suitable for real-project pilots.'
     case 'draft':
     default:
       return language === 'zh'
-        ? '这是一版仍在持续演进的草案发布，结构、协议或默认工作流仍可能继续调整。'
-        : 'This release is still a fast-moving draft. Structure, protocol, and default flows may continue to change.'
+        ? '这是仍在演进中的草案发布线，结构、协议和默认工作方式仍可能继续收敛。'
+        : 'This is still a draft release line. Structure, protocol, and default operating flows may continue to evolve.'
   }
 }
 
 export function formatSnapshotVersion(version: number, language: Language) {
-  return language === 'zh' ? `投影视图 ${version}` : `Snapshot ${version}`
+  return language === 'zh' ? `投影视图 v${version}` : `Projection v${version}`
 }
 
 export function explainSnapshotVersion(version: number, language: Language) {
   return language === 'zh'
-    ? `这是 Operator Console 自己的投影视图版本（当前为 ${version}），表示客户端如何组织快照数据，不等于 CodeWinter 本体的发布版本。`
-    : `This is the Operator Console's own projection schema version (${version}). It describes how the client organizes snapshot data, not the CodeWinter core release version.`
+    ? `这是 Operator Console 自己的投影视图版本（当前为 v${version}），说明客户端如何组织和展示快照数据；它不是 CodeWinter 本体版本。`
+    : `This is the Operator Console's own projection schema version (currently v${version}). It describes how the client organizes snapshot data and is not the CodeWinter core release version.`
 }
 
 export function localizeHealthWarning(warning: string, language: Language) {
@@ -103,7 +103,7 @@ export function localizeHealthWarning(warning: string, language: Language) {
     },
     'No real thread cards were detected yet; Runtime may still be showing an empty baseline.': {
       en: 'No real thread cards were detected yet; Runtime may still be showing an empty baseline.',
-      zh: '当前还没有检测到真实线程卡，说明 Runtime 视图现在看到的可能仍是空基线。',
+      zh: '当前还没有检测到真实线程卡，说明 Runtime 看到的很可能仍是空基线。',
     },
   }
 
@@ -117,12 +117,12 @@ export function localizeRuntimeAlert(message: string, language: Language) {
   }
 
   if (message === 'Current instance is still at the BOOTSTRAPPING baseline.') {
-    return '当前实例仍处于 BOOTSTRAPPING 基线，说明初始化或实例接管还没有完全完成。'
+    return '当前实例仍停留在 BOOTSTRAPPING 基线，说明初始化或实例接管尚未完全完成。'
   }
 
   const deviationMatch = message.match(/^Thread (.+) explicitly reported deviation\.$/)
   if (deviationMatch) {
-    return `线程 ${deviationMatch[1]} 主动上报了偏航信号，说明它认为自己可能正在偏离预期执行路径。`
+    return `线程 ${deviationMatch[1]} 主动上报了偏航信号，说明它判断自己可能偏离了预期执行路径。`
   }
 
   const decisionMatch = message.match(/^Thread (.+) still has a pending decision\.$/)
@@ -132,7 +132,7 @@ export function localizeRuntimeAlert(message: string, language: Language) {
 
   const statusMatch = message.match(/^Thread (.+) is currently in status (.+)\.$/)
   if (statusMatch) {
-    return `线程 ${statusMatch[1]} 当前状态为 ${statusMatch[2]}，表示它仍处于需要关注的运行阶段。`
+    return `线程 ${statusMatch[1]} 当前状态为 ${statusMatch[2]}，说明它仍处于需要关注的运行阶段。`
   }
 
   const requestMatch = message.match(
@@ -173,13 +173,15 @@ export function localizeInstanceFieldLabel(key: string, language: Language) {
       release_theme: 'Release Theme',
       release_codename: 'Release Codename',
       release_notes_path: 'Release Notes Path',
+      project_introduction_archive_path: 'Project Introduction Archive Path',
+      usage_guide_archive_path: 'Usage Guide Archive Path',
       instance_name: 'Instance Name',
       workspace_root: 'Workspace Root',
       status: 'Instance Status',
       compatibility_window: 'Compatibility Window',
       instance_schema_version: 'Instance Schema Version',
       runtime_coordination_version: 'Runtime Coordination Version',
-      manager_lease_holder: 'Manager Lease Holder',
+      manager_lease_holder: 'Current Manager Thread',
       last_bootstrap_at: 'Last Bootstrap At',
       last_upgrade_at: 'Last Upgrade At',
       bootstrap_contract_version: 'Bootstrap Contract Version',
@@ -202,13 +204,15 @@ export function localizeInstanceFieldLabel(key: string, language: Language) {
     release_theme: '发布主题',
     release_codename: '发布代号',
     release_notes_path: '发布说明路径',
+    project_introduction_archive_path: '项目介绍留档路径',
+    usage_guide_archive_path: '使用说明留档路径',
     instance_name: '实例名称',
     workspace_root: '工作区根目录',
     status: '实例状态',
     compatibility_window: '兼容窗口',
     instance_schema_version: '实例结构版本',
     runtime_coordination_version: '运行协作版本',
-    manager_lease_holder: '管理租约持有者',
+    manager_lease_holder: '当前管理线程',
     last_bootstrap_at: '最近 Bootstrap 时间',
     last_upgrade_at: '最近升级时间',
     bootstrap_contract_version: 'Bootstrap 协议版本',

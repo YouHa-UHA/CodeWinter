@@ -6,7 +6,7 @@ import {
   RadarChartOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Alert, Button, Card, Empty, List, Space, Statistic, Tag, Typography } from 'antd'
+import { Alert, Button, Empty, Space, Tag, Typography } from 'antd'
 import { localizeProtocolValue, localizeRuntimeAlert } from '../lib/i18n'
 import type { Language } from '../lib/i18n'
 import type {
@@ -63,24 +63,24 @@ export function RuntimePage({
   const copy =
     language === 'zh'
       ? {
-          overview: '运行概览',
-          title: '线程与协作运行态',
+          kicker: '实时协作信号',
+          title: '让线程状态像空气一样流动，而不是埋在文件里',
           summary:
-            '让状态、阻塞、协作与决策信号更容易被看懂，而不是藏在 Markdown 深处。',
-          managerLease: '管理租约',
+            '运行态页面的重点不是堆更多字段，而是把谁在推进、谁被阻塞、谁需要决策、哪里正在积累协作压力，变成一眼可扫读的操作层。',
+          currentManager: '当前管理线程',
           threads: '线程',
           requests: '请求',
           alerts: '提醒',
           registeredThreads: '已注册线程',
-          noThreads: '当前还没有发现真实线程卡',
+          noThreads: '当前还没有检测到真实线程卡。',
           open: '打开',
           scopeClaims: '边界声明',
           nextStep: '推荐下一步',
           lastUpdated: '最近更新',
           collaborationRequests: '协作请求',
-          noRequests: '当前没有打开的协作请求卡',
+          noRequests: '当前没有待处理的协作请求卡。',
           alertsTitle: '运行提醒',
-          noAlerts: '当前没有运行风险提醒',
+          noAlerts: '当前没有运行级风险提醒。',
           from: '来源',
           type: '类型',
           acceptance: '接收信号',
@@ -88,13 +88,14 @@ export function RuntimePage({
           deviation: '偏航',
           decision: '决策',
           phase: '阶段',
+          managerHint: '这里显示当前接管控制面的管理线程，而不是永久不变的管理员身份。',
         }
       : {
-          overview: 'Runtime Overview',
-          title: 'Thread and collaboration runtime',
+          kicker: 'Runtime Signals',
+          title: 'Let thread state move like a visible layer instead of hiding in files',
           summary:
-            'Make status, blockage, collaboration, and decision signals easy to understand instead of burying them in Markdown.',
-          managerLease: 'Manager Lease',
+            'The runtime surface should not dump more fields. It should make it easy to scan who is moving, who is blocked, who needs a decision, and where collaboration pressure is building.',
+          currentManager: 'Current Manager',
           threads: 'Threads',
           requests: 'Requests',
           alerts: 'Alerts',
@@ -115,222 +116,208 @@ export function RuntimePage({
           deviation: 'Deviation',
           decision: 'Decision',
           phase: 'Phase',
+          managerHint:
+            'This shows the thread currently holding the manager role for the control plane, not a permanent administrator identity.',
         }
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
-      <Card className="surface-card" bordered={false}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <div>
-            <Text className="section-kicker">{copy.overview}</Text>
-            <Title level={4}>{copy.title}</Title>
-            <Paragraph type="secondary">{copy.summary}</Paragraph>
-          </div>
-          <div className="metric-grid-v2">
-            <Card className="inner-card" bordered={false}>
-              <Statistic
-                title={copy.managerLease}
-                value={metricLabel(managerLeaseHolder, language)}
-                prefix={<CompassOutlined />}
-              />
-            </Card>
-            <Card className="inner-card" bordered={false}>
-              <Statistic title={copy.threads} value={threads.length} prefix={<ApartmentOutlined />} />
-            </Card>
-            <Card className="inner-card" bordered={false}>
-              <Statistic
-                title={copy.requests}
-                value={collabRequests.length}
-                prefix={<RadarChartOutlined />}
-              />
-            </Card>
-            <Card className="inner-card" bordered={false}>
-              <Statistic title={copy.alerts} value={alerts.length} prefix={<WarningOutlined />} />
-            </Card>
-          </div>
-        </Space>
-      </Card>
+    <div className="page-stack">
+      <section className="hero-panel runtime-hero">
+        <div className="hero-copy">
+          <Text className="section-kicker">{copy.kicker}</Text>
+          <Title level={2}>{copy.title}</Title>
+          <Paragraph>{copy.summary}</Paragraph>
+        </div>
 
-      <Card
-        className="surface-card"
-        bordered={false}
-        title={
-          <Space direction="vertical" size={0}>
+        <div className="metric-grid-v3">
+          <article className="metric-orb glass-sheet">
+            <CompassOutlined />
+            <div>
+              <Text className="metric-label">{copy.currentManager}</Text>
+              <Title level={4}>{metricLabel(managerLeaseHolder, language)}</Title>
+              <Text type="secondary">{copy.managerHint}</Text>
+            </div>
+          </article>
+          <article className="metric-orb glass-sheet">
+            <ApartmentOutlined />
+            <div>
+              <Text className="metric-label">{copy.threads}</Text>
+              <Title level={4}>{threads.length}</Title>
+            </div>
+          </article>
+          <article className="metric-orb glass-sheet">
+            <RadarChartOutlined />
+            <div>
+              <Text className="metric-label">{copy.requests}</Text>
+              <Title level={4}>{collabRequests.length}</Title>
+            </div>
+          </article>
+          <article className="metric-orb glass-sheet">
+            <WarningOutlined />
+            <div>
+              <Text className="metric-label">{copy.alerts}</Text>
+              <Title level={4}>{alerts.length}</Title>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
             <Text className="section-kicker">{copy.threads}</Text>
             <Title level={4}>{copy.registeredThreads}</Title>
-          </Space>
-        }
-      >
+          </div>
+        </div>
+
         {threads.length === 0 ? (
-          <Empty description={copy.noThreads} />
+          <div className="solid-surface empty-surface">
+            <Empty description={copy.noThreads} />
+          </div>
         ) : (
-          <div className="runtime-card-list">
+          <div className="runtime-thread-stack">
             {threads.map((thread) => (
-              <Card
-                key={thread.path}
-                className="inner-card"
-                bordered={false}
-                title={
-                  <Space wrap>
-                    <Text strong>{thread.threadId}</Text>
-                    <Tag color={toneColor(thread.status)}>{metricLabel(thread.status, language)}</Tag>
-                    <Tag>{metricLabel(thread.role, language)}</Tag>
-                  </Space>
-                }
-                extra={
+              <article key={thread.path} className="runtime-thread solid-surface">
+                <div className="runtime-thread-head">
+                  <div>
+                    <Space wrap>
+                      <Title level={5}>{thread.threadId}</Title>
+                      <Tag color={toneColor(thread.status)}>{metricLabel(thread.status, language)}</Tag>
+                      <Tag>{metricLabel(thread.role, language)}</Tag>
+                    </Space>
+                    <Paragraph className="path-text">{thread.path}</Paragraph>
+                  </div>
                   <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(thread.path)}>
                     {copy.open}
                   </Button>
-                }
-              >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph className="path-text">{thread.path}</Paragraph>
-                  <div className="runtime-pill-row">
-                    <Tag color="blue">
-                      {copy.phase} {metricLabel(thread.phase, language)}
-                    </Tag>
-                    <Tag color={toneColor(thread.confidence)}>
-                      {copy.confidence} {metricLabel(thread.confidence, language)}
-                    </Tag>
-                    <Tag color={toneColor(thread.deviationFlag)}>
-                      {copy.deviation} {metricLabel(thread.deviationFlag, language)}
-                    </Tag>
-                    <Tag color={toneColor(thread.decisionNeeded)}>
-                      {copy.decision} {metricLabel(thread.decisionNeeded, language)}
-                    </Tag>
-                  </div>
-                  <div className="runtime-meta-grid">
-                    <Card size="small" bordered={false} className="meta-mini-card">
-                      <Text type="secondary">{copy.scopeClaims}</Text>
-                      <Paragraph>{metricLabel(thread.scopeClaims, language)}</Paragraph>
-                    </Card>
-                    <Card size="small" bordered={false} className="meta-mini-card">
-                      <Text type="secondary">{copy.nextStep}</Text>
-                      <Paragraph>{metricLabel(thread.recommendedNextStep, language)}</Paragraph>
-                    </Card>
-                    <Card size="small" bordered={false} className="meta-mini-card">
-                      <Text type="secondary">{copy.lastUpdated}</Text>
-                      <Paragraph>{metricLabel(thread.lastUpdated, language)}</Paragraph>
-                    </Card>
-                  </div>
-                </Space>
-              </Card>
+                </div>
+
+                <div className="runtime-signal-row">
+                  <Tag color="processing">
+                    {copy.phase} · {metricLabel(thread.phase, language)}
+                  </Tag>
+                  <Tag color={toneColor(thread.confidence)}>
+                    {copy.confidence} · {metricLabel(thread.confidence, language)}
+                  </Tag>
+                  <Tag color={toneColor(thread.deviationFlag)}>
+                    {copy.deviation} · {metricLabel(thread.deviationFlag, language)}
+                  </Tag>
+                  <Tag color={toneColor(thread.decisionNeeded)}>
+                    {copy.decision} · {metricLabel(thread.decisionNeeded, language)}
+                  </Tag>
+                </div>
+
+                <div className="runtime-detail-grid">
+                  <article className="runtime-detail-card">
+                    <Text className="detail-label">{copy.scopeClaims}</Text>
+                    <Paragraph>{metricLabel(thread.scopeClaims, language)}</Paragraph>
+                  </article>
+                  <article className="runtime-detail-card">
+                    <Text className="detail-label">{copy.nextStep}</Text>
+                    <Paragraph>{metricLabel(thread.recommendedNextStep, language)}</Paragraph>
+                  </article>
+                  <article className="runtime-detail-card">
+                    <Text className="detail-label">{copy.lastUpdated}</Text>
+                    <Paragraph>{metricLabel(thread.lastUpdated, language)}</Paragraph>
+                  </article>
+                </div>
+              </article>
             ))}
           </div>
         )}
-      </Card>
+      </section>
 
-      <Card
-        className="surface-card"
-        bordered={false}
-        title={
-          <Space direction="vertical" size={0}>
-            <Text className="section-kicker">{copy.requests}</Text>
-            <Title level={4}>{copy.collaborationRequests}</Title>
-          </Space>
-        }
-      >
-        {collabRequests.length === 0 ? (
-          <Empty description={copy.noRequests} />
-        ) : (
-          <List
-            itemLayout="vertical"
-            dataSource={collabRequests}
-            renderItem={(request) => (
-              <List.Item
-                actions={[
-                  <Button
-                    key="open"
-                    icon={<FolderOpenOutlined />}
-                    onClick={() => void onOpenPath(request.path)}
-                  >
-                    {copy.open}
-                  </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={<RadarChartOutlined />}
-                  title={
-                    <Space wrap>
-                      <span>{request.requestId}</span>
-                      <Tag color={toneColor(request.urgency)}>
-                        {metricLabel(request.urgency, language)}
-                      </Tag>
-                      <Tag color={toneColor(request.status)}>
-                        {metricLabel(request.status, language)}
-                      </Tag>
-                    </Space>
-                  }
-                  description={
-                    <Space direction="vertical" size={6}>
-                      <Paragraph className="path-text">{request.path}</Paragraph>
+      <section className="runtime-dual-grid">
+        <section className="solid-surface">
+          <div className="section-heading section-heading-tight">
+            <div>
+              <Text className="section-kicker">{copy.requests}</Text>
+              <Title level={4}>{copy.collaborationRequests}</Title>
+            </div>
+          </div>
+
+          {collabRequests.length === 0 ? (
+            <Empty description={copy.noRequests} />
+          ) : (
+            <div className="entry-list compact-list">
+              {collabRequests.map((request) => (
+                <article key={request.path} className="entry-row">
+                  <div className="entry-row-main">
+                    <div className="entry-row-icon">
+                      <ArrowRightOutlined />
+                    </div>
+                    <div className="entry-row-copy">
                       <Space wrap>
-                        <Text type="secondary">
-                          {copy.from} {metricLabel(request.fromThreadId, language)}
-                        </Text>
-                        <ArrowRightOutlined />
-                        <Text type="secondary">
-                          {metricLabel(request.targetThreadId ?? request.targetCapability, language)}
-                        </Text>
+                        <Title level={5}>{request.requestId}</Title>
+                        <Tag color={toneColor(request.urgency)}>
+                          {metricLabel(request.urgency, language)}
+                        </Tag>
+                        <Tag color={toneColor(request.status)}>
+                          {metricLabel(request.status, language)}
+                        </Tag>
                       </Space>
-                      <Text type="secondary">
-                        {copy.type} {metricLabel(request.type, language)} / {copy.acceptance}{' '}
+                      <Paragraph className="path-text">{request.path}</Paragraph>
+                      <Paragraph type="secondary">
+                        {copy.from} {metricLabel(request.fromThreadId, language)} · {copy.type}{' '}
+                        {metricLabel(request.type, language)} · {copy.acceptance}{' '}
                         {metricLabel(request.acceptanceSignal, language)}
-                      </Text>
-                    </Space>
-                  }
-                />
-              </List.Item>
-            )}
-          />
-        )}
-      </Card>
+                      </Paragraph>
+                    </div>
+                  </div>
+                  <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(request.path)}>
+                    {copy.open}
+                  </Button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
-      <Card
-        className="surface-card"
-        bordered={false}
-        title={
-          <Space direction="vertical" size={0}>
-            <Text className="section-kicker">{copy.alerts}</Text>
-            <Title level={4}>{copy.alertsTitle}</Title>
-          </Space>
-        }
-      >
-        {alerts.length === 0 ? (
-          <Empty description={copy.noAlerts} />
-        ) : (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            {alerts.map((alert, index) => (
-              <Alert
-                key={`${alert.source ?? 'alert'}-${index}`}
-                type={
-                  alert.level === 'critical'
-                    ? 'error'
-                    : alert.level === 'warning'
-                      ? 'warning'
-                      : 'info'
-                }
-                message={localizeRuntimeAlert(alert.message, language)}
-                description={
-                  alert.source ? (
-                    <Space wrap>
-                      <Paragraph className="path-text">{alert.source}</Paragraph>
-                      <Button
-                        size="small"
-                        icon={<FolderOpenOutlined />}
-                        onClick={() => void onOpenPath(alert.source!)}
-                      >
-                        {copy.open}
-                      </Button>
-                    </Space>
-                  ) : undefined
-                }
-                showIcon
-              />
-            ))}
-          </Space>
-        )}
-      </Card>
-    </Space>
+        <section className="solid-surface">
+          <div className="section-heading section-heading-tight">
+            <div>
+              <Text className="section-kicker">{copy.alerts}</Text>
+              <Title level={4}>{copy.alertsTitle}</Title>
+            </div>
+          </div>
+
+          {alerts.length === 0 ? (
+            <Empty description={copy.noAlerts} />
+          ) : (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              {alerts.map((alert, index) => (
+                <Alert
+                  key={`${alert.source ?? 'alert'}-${index}`}
+                  className="runtime-alert"
+                  type={
+                    alert.level === 'critical'
+                      ? 'error'
+                      : alert.level === 'warning'
+                        ? 'warning'
+                        : 'info'
+                  }
+                  message={localizeRuntimeAlert(alert.message, language)}
+                  description={
+                    alert.source ? (
+                      <Space wrap>
+                        <Paragraph className="path-text">{alert.source}</Paragraph>
+                        <Button
+                          size="small"
+                          icon={<FolderOpenOutlined />}
+                          onClick={() => void onOpenPath(alert.source!)}
+                        >
+                          {copy.open}
+                        </Button>
+                      </Space>
+                    ) : undefined
+                  }
+                  showIcon
+                />
+              ))}
+            </Space>
+          )}
+        </section>
+      </section>
+    </div>
   )
 }

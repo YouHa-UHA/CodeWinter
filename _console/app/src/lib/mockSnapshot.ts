@@ -10,21 +10,73 @@ export const mockSnapshot: ConsoleSnapshot = {
     theme: 'CodeWinter v0.1.x Harness Upgrade',
     codename: 'Carrot on a Stick',
   },
+  home: {
+    featuredDocs: [
+      {
+        id: 'project-introduction',
+        path: './CodeWinter/_core/releases/v0.1.1.project-introduction.md',
+        label: { en: 'Project Introduction', zh: '项目介绍' },
+        description: {
+          en: 'An overview of what CodeWinter is, why it exists, and what capabilities it provides.',
+          zh: '帮助你快速理解 CodeWinter 是什么、为什么存在，以及它提供了哪些核心能力。',
+        },
+      },
+      {
+        id: 'usage-guide',
+        path: './CodeWinter/_core/releases/v0.1.1.usage-guide.md',
+        label: { en: 'Usage Guide', zh: '使用说明' },
+        description: {
+          en: 'The operating guide for bootstrapping, daily collaboration, runtime coordination, and upgrades.',
+          zh: '说明如何初始化接入、日常协作、运行态观察以及实例升级。',
+        },
+      },
+    ],
+    sections: [
+      {
+        id: 'getting-started',
+        title: { en: 'Getting Started', zh: '开始使用' },
+        description: {
+          en: 'The first documents a human operator or manager thread should read when entering a CodeWinter workspace.',
+          zh: '进入 CodeWinter 工作区后，管理者或管理线程优先需要阅读的入口文档。',
+        },
+        docs: [
+          {
+            id: 'readme',
+            path: './CodeWinter/README.md',
+            label: { en: 'Repository Overview', zh: '仓库总览' },
+            description: {
+              en: 'The public-facing overview of CodeWinter as a portable collaboration control plane.',
+              zh: '面向仓库阅读者的公开总览，介绍 CodeWinter 的定位与核心能力。',
+            },
+          },
+          {
+            id: 'starter',
+            path: './CodeWinter/read.md',
+            label: { en: 'Starter Entry', zh: 'Starter 入口' },
+            description: {
+              en: 'The shared starter entry for manager and execution threads.',
+              zh: '管理线程和执行线程共享的统一启动入口。',
+            },
+          },
+        ],
+      },
+    ],
+  },
   managerBrief: {
     path: './CodeWinter/00-control-plane/manager-brief.md',
     sections: [
       {
         title: 'Current Control Goals',
         lines: [
-          '1. Validate the first real project instance.',
-          '2. Keep the Operator Console subordinate to the CodeWinter core.',
+          'Validate the first real project instance.',
+          'Keep the Operator Console subordinate to the CodeWinter core.',
         ],
       },
       {
         title: 'Current Orchestration Strategy',
         lines: [
-          '1. Prioritize safe operator actions before broader write access.',
-          '2. Keep runtime visibility high and protocol coupling low.',
+          'Prioritize safe operator actions before broader write access.',
+          'Keep runtime visibility high and protocol coupling low.',
         ],
       },
     ],
@@ -72,7 +124,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         label: { en: 'Bootstrap', zh: '初始化接管' },
         description: {
           en: 'Set up a new CodeWinter instance and hand the first lease to the manager thread.',
-          zh: '用于新项目第一次接入 CodeWinter，由管理线程完成初始化安装。',
+          zh: '用于新项目第一次接入 CodeWinter，由管理线程完成初始化接管。',
         },
       },
     ],
@@ -85,7 +137,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         headline: { en: 'Raw intake for the manager thread', zh: '管理线程原始收件入口' },
         body: {
           en: 'Use this area to hand raw files to the manager thread.',
-          zh: '这里用于向管理线程投递原始材料。',
+          zh: '这里用于向管理线程投递原始材料，不直接改动协议或长期知识层。',
         },
         buttonLabel: { en: 'Choose a file and write it to Inbox', zh: '选择文件写入 Inbox' },
         emptyState: { en: 'No inbox files have been detected yet.', zh: '当前还没有检测到 Inbox 文件。' },
@@ -95,22 +147,13 @@ export const mockSnapshot: ConsoleSnapshot = {
         target: 'taskPacketDrop',
         path: './CodeWinter/04-task-packets/_incoming',
         kicker: { en: 'Task Packet Drop', zh: '任务投递区' },
-        title: {
-          en: 'Safe write to 04-task-packets/_incoming',
-          zh: '安全写入 04-task-packets/_incoming',
-        },
-        headline: {
-          en: 'Stage raw files for child-thread delivery',
-          zh: '为子线程任务先暂存原始附件',
-        },
+        title: { en: 'Safe write to 04-task-packets/_incoming', zh: '安全写入 04-task-packets/_incoming' },
+        headline: { en: 'Stage raw files for child-thread delivery', zh: '为子线程任务暂存原始附件' },
         body: {
           en: 'Use this drop zone to stage files that will later be organized into task packets.',
           zh: '这里用于暂存后续要整理成正式任务包的原始附件。',
         },
-        buttonLabel: {
-          en: 'Choose a file and send it to Task Packets',
-          zh: '选择文件投递到 Task Packets',
-        },
+        buttonLabel: { en: 'Choose a file and send it to Task Packets', zh: '选择文件投递到 Task Packets' },
         emptyState: {
           en: 'No task packet drop files have been detected yet.',
           zh: '当前还没有检测到任务投递文件。',

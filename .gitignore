@@ -34,6 +34,7 @@ _console/app/*.local
 
 # Tauri / Rust build output
 _console/src-tauri/target/
+_console/src-tauri/gen/
 
 # Console runtime cache
 _console/runtime/snapshots/*

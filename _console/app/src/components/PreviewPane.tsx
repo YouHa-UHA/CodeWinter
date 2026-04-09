@@ -1,5 +1,5 @@
 import { EyeOutlined, FolderOpenOutlined } from '@ant-design/icons'
-import { Button, Empty, Space, Spin, Tag, Typography } from 'antd'
+import { Button, Empty, Spin, Tag, Typography } from 'antd'
 import type { Language } from '../lib/i18n'
 
 const { Paragraph, Text, Title } = Typography
@@ -43,34 +43,36 @@ export function PreviewPane({ language, preview, onOpenPath }: PreviewPaneProps)
           loading: '正在读取内容…',
           empty: '当前没有可预览的内容。',
           promptNotes: '模板说明',
-          canonicalPrompt: '可复制提示词',
-          canonicalHint: '这里只展示 canonical text block，不包含外围 Markdown 说明。',
-          documentPreview: '文档预览',
+          canonicalPrompt: '可复制正文',
+          canonicalHint: '这里仅展示 canonical text block，不包含外围 Markdown 说明。',
+          documentPreview: '文档正文',
         }
       : {
-          inspector: 'Preview',
+          inspector: 'Content Preview',
           openPath: 'Open path',
           loading: 'Reading content…',
           empty: 'There is nothing to preview yet.',
           promptNotes: 'Template Notes',
-          canonicalPrompt: 'Copy-ready Prompt',
+          canonicalPrompt: 'Canonical Prompt Body',
           canonicalHint:
             'This view isolates the canonical text block and leaves the surrounding Markdown outside the copy surface.',
-          documentPreview: 'Document Preview',
+          documentPreview: 'Document Body',
         }
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }} className="preview-pane">
+    <div className="preview-pane">
       <div className="preview-pane-header">
         <div>
           <Text className="section-kicker">{copy.inspector}</Text>
           <Title level={4}>{preview.title}</Title>
         </div>
-        <EyeOutlined className="preview-pane-icon" />
+        <div className="preview-pane-icon">
+          <EyeOutlined />
+        </div>
       </div>
 
       {preview.path ? (
-        <div className="preview-pane-meta">
+        <div className="preview-pane-meta glass-sheet">
           <Paragraph copyable={{ text: preview.path }} className="path-text">
             {preview.path}
           </Paragraph>
@@ -81,40 +83,40 @@ export function PreviewPane({ language, preview, onOpenPath }: PreviewPaneProps)
       ) : null}
 
       {preview.loading ? (
-        <div className="preview-loading">
+        <div className="preview-loading solid-surface">
           <Spin />
           <Text type="secondary">{copy.loading}</Text>
         </div>
       ) : preview.body.trim().length === 0 ? (
-        <Empty description={copy.empty} />
+        <div className="solid-surface empty-surface">
+          <Empty description={copy.empty} />
+        </div>
       ) : promptBlock ? (
-        <div className="prompt-preview-surface">
+        <div className="preview-stack">
           {promptBlock.notes ? (
-            <div className="prompt-preview-notes">
+            <section className="glass-sheet preview-note-sheet">
               <Text className="section-kicker">{copy.promptNotes}</Text>
-              <div className="prompt-preview-note-body">{promptBlock.notes}</div>
-            </div>
+              <div className="preview-prose">{promptBlock.notes}</div>
+            </section>
           ) : null}
 
-          <div className="prompt-preview-shell">
-            <div className="prompt-preview-toolbar">
+          <section className="solid-surface preview-document-sheet">
+            <div className="preview-sheet-head">
               <div>
                 <Text className="section-kicker">{copy.canonicalPrompt}</Text>
-                <Paragraph type="secondary" className="prompt-preview-hint">
-                  {copy.canonicalHint}
-                </Paragraph>
+                <Paragraph type="secondary">{copy.canonicalHint}</Paragraph>
               </div>
-              <Tag color="orange">text</Tag>
+              <Tag color="processing">text</Tag>
             </div>
             <pre className="prompt-preview-text">{promptBlock.promptBody}</pre>
-          </div>
+          </section>
         </div>
       ) : (
-        <div className="document-preview-surface">
+        <section className="solid-surface preview-document-sheet">
           <Text className="section-kicker">{copy.documentPreview}</Text>
-          <pre className="document-preview-text">{preview.body}</pre>
-        </div>
+          <div className="preview-prose">{preview.body}</div>
+        </section>
       )}
-    </Space>
+    </div>
   )
 }

@@ -3,13 +3,21 @@ import {
   EyeOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
+  InboxOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Empty, List, Space, Tag, Typography } from 'antd'
+import { Button, Empty, Space, Tag, Typography } from 'antd'
 import { useId } from 'react'
-import type { DeliverableItem, DeliverableGroup, PromptEntry, UploadFeedback, UploadTarget, UploadZone } from '../types/snapshot'
 import { pickLocalizedText } from '../lib/i18n'
 import type { Language } from '../lib/i18n'
+import type {
+  DeliverableGroup,
+  DeliverableItem,
+  PromptEntry,
+  UploadFeedback,
+  UploadTarget,
+  UploadZone,
+} from '../types/snapshot'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -41,7 +49,7 @@ function kindColor(kind: DeliverableItem['kind']) {
 function kindLabel(kind: DeliverableItem['kind'], language: Language) {
   switch (kind) {
     case 'final':
-      return 'Final'
+      return language === 'zh' ? '正式版' : 'Final'
     case 'index':
       return 'Index'
     case 'thread-output':
@@ -97,30 +105,45 @@ export function WorkbenchPage({
   const copy =
     language === 'zh'
       ? {
-          promptCenter: '提示词中心',
-          promptTitle: '高频提示词',
+          promptsKicker: '提示词中心',
+          promptsTitle: '高频操作入口',
+          promptsSummary:
+            '把最常用的提示词做成一眼可识别、一步可复制的工作面，而不是埋在目录深处。',
           copyReady: '可直接复制',
           copy: '复制',
           preview: '预览',
           open: '打开',
+          uploadKicker: '投递区',
+          uploadTitle: '安全写入入口',
           deliverablesKicker: '正式输出',
-          deliverablesTitle: '正式输出入口',
+          deliverablesTitle: '交付与结果访问',
+          deliverablesSummary: '优先显示最终版本，再保留 Index 和线程输出作为上下文入口。',
           readOnly: '只读',
           noDeliverables: '当前还没有检测到正式输出文件。',
           itemCount: '项',
+          notRecorded: '未记录',
+          latestFiles: '最近文件',
         }
       : {
-          promptCenter: 'Prompt Center',
-          promptTitle: 'High-frequency prompts',
+          promptsKicker: 'Prompt Center',
+          promptsTitle: 'High-frequency operator actions',
+          promptsSummary:
+            'Keep the most-used prompts visible, copyable, and calm to operate instead of burying them in the file tree.',
           copyReady: 'Copy-ready',
           copy: 'Copy',
           preview: 'Preview',
           open: 'Open',
+          uploadKicker: 'Intake',
+          uploadTitle: 'Safe write surfaces',
           deliverablesKicker: 'Deliverables',
-          deliverablesTitle: 'Deliverable access',
+          deliverablesTitle: 'Result and deliverable access',
+          deliverablesSummary:
+            'Surface final versions first while keeping index and thread outputs close enough for context.',
           readOnly: 'Read-only',
           noDeliverables: 'No deliverable files have been detected yet.',
           itemCount: 'items',
+          notRecorded: 'Not recorded',
+          latestFiles: 'Recent files',
         }
 
   const inputIds = {
@@ -129,229 +152,215 @@ export function WorkbenchPage({
   }
 
   return (
-    <Space direction="vertical" size={20} style={{ width: '100%' }}>
-      <Card
-        className="surface-card"
-        bordered={false}
-        title={
-          <Space direction="vertical" size={0}>
-            <Text className="section-kicker">{copy.promptCenter}</Text>
-            <Title level={4}>{copy.promptTitle}</Title>
-          </Space>
-        }
-        extra={<Tag color="orange">{copy.copyReady}</Tag>}
-      >
-        <div className="prompt-grid-v2">
+    <div className="page-stack">
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
+            <Text className="section-kicker">{copy.promptsKicker}</Text>
+            <Title level={4}>{copy.promptsTitle}</Title>
+          </div>
+          <Paragraph type="secondary">{copy.promptsSummary}</Paragraph>
+        </div>
+
+        <div className="prompt-shelf">
           {prompts.map((entry) => (
-            <Card key={entry.id} className="inner-card" bordered={false}>
-              <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                <div>
-                  <Title level={5}>{pickLocalizedText(entry.label, language)}</Title>
-                  <Paragraph type="secondary">
-                    {pickLocalizedText(entry.description, language)}
-                  </Paragraph>
-                  <Paragraph copyable={{ text: entry.path }} className="path-text">
-                    {entry.path}
-                  </Paragraph>
+            <article key={entry.id} className="prompt-tile solid-surface">
+              <div className="prompt-tile-head">
+                <div className="prompt-badge">
+                  <CopyOutlined />
                 </div>
-                <Space wrap>
-                  <Button
-                    type="primary"
-                    icon={<CopyOutlined />}
-                    onClick={() => void onCopyPrompt(entry)}
-                  >
-                    {copy.copy}
-                  </Button>
-                  <Button
-                    icon={<EyeOutlined />}
-                    onClick={() => void onPreview(pickLocalizedText(entry.label, language), entry.path)}
-                  >
-                    {copy.preview}
-                  </Button>
-                  <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(entry.path)}>
-                    {copy.open}
-                  </Button>
-                </Space>
+                <Tag color="processing">{copy.copyReady}</Tag>
+              </div>
+
+              <div className="prompt-tile-copy">
+                <Title level={5}>{pickLocalizedText(entry.label, language)}</Title>
+                <Paragraph type="secondary">
+                  {pickLocalizedText(entry.description, language)}
+                </Paragraph>
+                <Paragraph className="path-text">{entry.path}</Paragraph>
+              </div>
+
+              <Space wrap>
+                <Button
+                  type="primary"
+                  icon={<CopyOutlined />}
+                  onClick={() => void onCopyPrompt(entry)}
+                >
+                  {copy.copy}
+                </Button>
+                <Button
+                  icon={<EyeOutlined />}
+                  onClick={() => void onPreview(pickLocalizedText(entry.label, language), entry.path)}
+                >
+                  {copy.preview}
+                </Button>
+                <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(entry.path)}>
+                  {copy.open}
+                </Button>
               </Space>
-            </Card>
+            </article>
           ))}
         </div>
-      </Card>
+      </section>
 
-      <div className="upload-grid">
-        {uploadZones.map((zone) => {
-          const feedback = uploadFeedbacks[zone.target]
-          const feedbackMessage = uploadMessage(feedback, language)
-          const inputId = inputIds[zone.target]
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
+            <Text className="section-kicker">{copy.uploadKicker}</Text>
+            <Title level={4}>{copy.uploadTitle}</Title>
+          </div>
+        </div>
 
-          return (
-            <Card
-              key={zone.target}
-              className="surface-card"
-              bordered={false}
-              title={
-                <Space direction="vertical" size={0}>
-                  <Text className="section-kicker">{pickLocalizedText(zone.kicker, language)}</Text>
-                  <Title level={4}>{pickLocalizedText(zone.title, language)}</Title>
-                </Space>
-              }
-              extra={
-                <Tag
-                  color={
-                    feedback.state === 'error'
-                      ? 'red'
-                      : feedback.state === 'done'
-                        ? 'green'
-                        : 'orange'
-                  }
-                >
-                  {uploadStateLabel(feedback.state, language)}
-                </Tag>
-              }
-            >
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <div className="upload-card">
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <div>
-                      <Title level={5}>{pickLocalizedText(zone.headline, language)}</Title>
-                      <Paragraph type="secondary">{pickLocalizedText(zone.body, language)}</Paragraph>
-                      <Paragraph className="path-text">{zone.path}</Paragraph>
-                    </div>
-                    <div>
-                      <input
-                        id={inputId}
-                        type="file"
-                        className="file-input-hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0]
-                          if (file) {
-                            void onUploadFile(zone.target, file)
-                          }
-                          event.currentTarget.value = ''
-                        }}
-                      />
-                      <label htmlFor={inputId}>
-                        <Button type="primary" icon={<UploadOutlined />}>
-                          {pickLocalizedText(zone.buttonLabel, language)}
-                        </Button>
-                      </label>
-                    </div>
-                    {feedbackMessage ? <Text type="secondary">{feedbackMessage}</Text> : null}
-                  </Space>
+        <div className="upload-shelf">
+          {uploadZones.map((zone) => {
+            const feedback = uploadFeedbacks[zone.target]
+            const feedbackMessage = uploadMessage(feedback, language)
+            const inputId = inputIds[zone.target]
+
+            return (
+              <article key={zone.target} className="upload-zone glass-sheet">
+                <div className="upload-zone-head">
+                  <div>
+                    <Text className="section-kicker">{pickLocalizedText(zone.kicker, language)}</Text>
+                    <Title level={4}>{pickLocalizedText(zone.title, language)}</Title>
+                  </div>
+                  <Tag
+                    color={
+                      feedback.state === 'error'
+                        ? 'red'
+                        : feedback.state === 'done'
+                          ? 'green'
+                          : 'processing'
+                    }
+                  >
+                    {uploadStateLabel(feedback.state, language)}
+                  </Tag>
+                </div>
+
+                <Paragraph type="secondary">{pickLocalizedText(zone.body, language)}</Paragraph>
+                <Paragraph className="path-text">{zone.path}</Paragraph>
+
+                <div className="upload-zone-cta">
+                  <div className="upload-zone-icon">
+                    <InboxOutlined />
+                  </div>
+                  <div>
+                    <Title level={5}>{pickLocalizedText(zone.headline, language)}</Title>
+                    <input
+                      id={inputId}
+                      type="file"
+                      className="file-input-hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) {
+                          void onUploadFile(zone.target, file)
+                        }
+                        event.currentTarget.value = ''
+                      }}
+                    />
+                    <label htmlFor={inputId}>
+                      <Button type="primary" icon={<UploadOutlined />}>
+                        {pickLocalizedText(zone.buttonLabel, language)}
+                      </Button>
+                    </label>
+                  </div>
+                </div>
+
+                {feedbackMessage ? <Text type="secondary">{feedbackMessage}</Text> : null}
+
+                <div className="subsection-strip">
+                  <Text className="section-kicker">{copy.latestFiles}</Text>
                 </div>
 
                 {zone.items.length === 0 ? (
-                  <Empty description={pickLocalizedText(zone.emptyState, language)} />
+                  <div className="solid-surface empty-surface compact-empty">
+                    <Empty description={pickLocalizedText(zone.emptyState, language)} />
+                  </div>
                 ) : (
-                  <List
-                    itemLayout="horizontal"
-                    dataSource={zone.items}
-                    renderItem={(item) => (
-                      <List.Item
-                        actions={[
-                          <Button
-                            key="open"
-                            icon={<FolderOpenOutlined />}
-                            onClick={() => void onOpenPath(item.path)}
-                          >
-                            {copy.open}
-                          </Button>,
-                        ]}
-                      >
-                        <List.Item.Meta
-                          title={item.name}
-                          description={
-                            <Space direction="vertical" size={2}>
-                              <Paragraph className="path-text">{item.path}</Paragraph>
-                              <Text type="secondary">
-                                {item.modifiedAt ?? (language === 'zh' ? '未记录' : 'Not recorded')}
-                              </Text>
-                            </Space>
-                          }
-                        />
-                      </List.Item>
-                    )}
-                  />
+                  <div className="entry-list compact-list">
+                    {zone.items.map((item) => (
+                      <article key={item.path} className="entry-row compact-entry-row">
+                        <div className="entry-row-copy">
+                          <Title level={5}>{item.name}</Title>
+                          <Paragraph className="path-text">{item.path}</Paragraph>
+                          <Text type="secondary">{item.modifiedAt ?? copy.notRecorded}</Text>
+                        </div>
+                        <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(item.path)}>
+                          {copy.open}
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
                 )}
-              </Space>
-            </Card>
-          )
-        })}
-      </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
 
-      <Card
-        className="surface-card"
-        bordered={false}
-        title={
-          <Space direction="vertical" size={0}>
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
             <Text className="section-kicker">{copy.deliverablesKicker}</Text>
             <Title level={4}>{copy.deliverablesTitle}</Title>
+          </div>
+          <Space wrap>
+            <Text type="secondary">{copy.deliverablesSummary}</Text>
+            <Tag color="blue">{copy.readOnly}</Tag>
           </Space>
-        }
-        extra={<Tag color="blue">{copy.readOnly}</Tag>}
-      >
+        </div>
+
         {deliverableGroups.length === 0 ? (
-          <Empty description={copy.noDeliverables} />
+          <div className="solid-surface empty-surface">
+            <Empty description={copy.noDeliverables} />
+          </div>
         ) : (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div className="deliverable-stack">
             {deliverableGroups.map((group) => (
-              <Card
-                key={group.id}
-                className="inner-card"
-                bordered={false}
-                title={pickLocalizedText(group.title, language)}
-                extra={
-                  <Text type="secondary">
+              <section key={group.id} className="solid-surface deliverable-group">
+                <div className="section-heading section-heading-tight">
+                  <div>
+                    <Title level={5}>{pickLocalizedText(group.title, language)}</Title>
+                    <Paragraph type="secondary">
+                      {pickLocalizedText(group.description, language)}
+                    </Paragraph>
+                  </div>
+                  <Tag>
                     {group.items.length} {copy.itemCount}
-                  </Text>
-                }
-              >
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Paragraph type="secondary">
-                    {pickLocalizedText(group.description, language)}
-                  </Paragraph>
-                  <List
-                    itemLayout="horizontal"
-                    dataSource={group.items}
-                    renderItem={(item) => (
-                      <List.Item
-                        actions={[
-                          <Button
-                            key="preview"
-                            icon={<FileSearchOutlined />}
-                            onClick={() => void onPreview(item.label, item.path)}
-                          >
-                            {copy.preview}
-                          </Button>,
-                          <Button
-                            key="open"
-                            icon={<FolderOpenOutlined />}
-                            onClick={() => void onOpenPath(item.path)}
-                          >
-                            {copy.open}
-                          </Button>,
-                        ]}
-                      >
-                        <List.Item.Meta
-                          title={
-                            <Space wrap>
-                              <span>{item.label}</span>
-                              <Tag color={kindColor(item.kind)}>
-                                {kindLabel(item.kind, language)}
-                              </Tag>
-                            </Space>
-                          }
-                          description={<Paragraph className="path-text">{item.path}</Paragraph>}
-                        />
-                      </List.Item>
-                    )}
-                  />
-                </Space>
-              </Card>
+                  </Tag>
+                </div>
+
+                <div className="entry-list">
+                  {group.items.map((item) => (
+                    <article key={item.path} className="entry-row">
+                      <div className="entry-row-main">
+                        <div className="entry-row-icon">
+                          <FileSearchOutlined />
+                        </div>
+                        <div className="entry-row-copy">
+                          <Space wrap>
+                            <Title level={5}>{item.label}</Title>
+                            <Tag color={kindColor(item.kind)}>{kindLabel(item.kind, language)}</Tag>
+                          </Space>
+                          <Paragraph className="path-text">{item.path}</Paragraph>
+                        </div>
+                      </div>
+                      <Space wrap>
+                        <Button icon={<EyeOutlined />} onClick={() => void onPreview(item.label, item.path)}>
+                          {copy.preview}
+                        </Button>
+                        <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(item.path)}>
+                          {copy.open}
+                        </Button>
+                      </Space>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ))}
-          </Space>
+          </div>
         )}
-      </Card>
-    </Space>
+      </section>
+    </div>
   )
 }

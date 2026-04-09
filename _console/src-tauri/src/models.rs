@@ -7,6 +7,7 @@ pub struct ConsoleSnapshot {
     pub generated_at: String,
     pub codewinter_root: String,
     pub release: ReleaseSummary,
+    pub home: HomeProjection,
     pub manager_brief: DocumentProjection,
     pub instance_manifest: InstanceManifestProjection,
     pub workbench: WorkbenchProjection,
@@ -28,6 +29,30 @@ pub struct ReleaseSummary {
     pub channel: String,
     pub theme: Option<String>,
     pub codename: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeProjection {
+    pub featured_docs: Vec<HomeDoc>,
+    pub sections: Vec<HomeSection>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeDoc {
+    pub id: String,
+    pub label: LocalizedText,
+    pub description: LocalizedText,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HomeSection {
+    pub id: String,
+    pub title: LocalizedText,
+    pub description: LocalizedText,
+    pub docs: Vec<HomeDoc>,
 }
 
 #[derive(Debug, Clone, Serialize)]

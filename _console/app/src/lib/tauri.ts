@@ -71,3 +71,63 @@ export async function listenSnapshotRefresh(
     handler(event.payload),
   )
 }
+
+async function getCurrentWindowHandle() {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window')
+  return getCurrentWindow()
+}
+
+export async function minimizeWindow() {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  await appWindow.minimize()
+}
+
+export async function toggleMaximizeWindow() {
+  if (!isTauriRuntime()) {
+    return false
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  await appWindow.toggleMaximize()
+  return appWindow.isMaximized()
+}
+
+export async function closeWindow() {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  await appWindow.close()
+}
+
+export async function startWindowDragging() {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  await appWindow.startDragging()
+}
+
+export async function isWindowMaximized() {
+  if (!isTauriRuntime()) {
+    return false
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  return appWindow.isMaximized()
+}
+
+export async function listenWindowResize(handler: () => void): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => {}
+  }
+
+  const appWindow = await getCurrentWindowHandle()
+  return appWindow.onResized(() => handler())
+}

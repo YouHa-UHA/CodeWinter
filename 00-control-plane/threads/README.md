@@ -13,6 +13,11 @@
 推荐 `thread_id` 格式：
 1. `<tool>-<role>-<topic>-<seq>`
 2. 例如：
-- `codewinter-manager-root-001`
-   - `cursor-worker-fable-report-002`
-   - `claude-worker-web-review-003`
+   - `codewinter-manager-root-001`
+   - `codex-worker-fable-report-002`
+   - `claude-reviewer-web-review-003`
+
+补充说明：
+1. `tool` 用来标识该线程当前所处的客户端或运行环境。
+2. `role` 建议与线程状态卡中的 `role` 字段保持一致。
+3. `topic` 应尽量简短、稳定、可复用，不要写成整句需求。

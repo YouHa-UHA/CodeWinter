@@ -10,10 +10,10 @@ use chrono::{DateTime, Utc};
 use crate::{
     models::{
         CollaborationRequestSummary, ConsoleSnapshot, DeliverableGroup, DeliverableItem,
-        DocumentProjection, ExplorerEntry, ExplorerProjection, HealthProjection, InboxItem,
-        InstanceManifestProjection, InstanceSection, KeyValueField, LocalizedText, PromptEntry,
-        ReleaseSummary, RuntimeAlert, RuntimeProjection, ThreadSummary, UploadZoneProjection,
-        WorkbenchProjection,
+        DocumentProjection, ExplorerEntry, ExplorerProjection, HealthProjection, HomeDoc,
+        HomeProjection, HomeSection, InboxItem, InstanceManifestProjection, InstanceSection,
+        KeyValueField, LocalizedText, PromptEntry, ReleaseSummary, RuntimeAlert,
+        RuntimeProjection, ThreadSummary, UploadZoneProjection, WorkbenchProjection,
     },
     parser::{parse_field_map, parse_key_value_fields, parse_markdown_sections, read_utf8_file},
     paths::ConsolePaths,
@@ -56,6 +56,7 @@ pub fn build_snapshot(paths: &ConsolePaths) -> Result<ConsoleSnapshot, String> {
             theme: release_fields.get("release_theme").cloned(),
             codename: release_fields.get("release_codename").cloned(),
         },
+        home: build_home_projection(paths, &release_fields),
         manager_brief: DocumentProjection {
             path: paths.relative_display_path(&manager_brief_path),
             sections: manager_sections,
@@ -91,6 +92,218 @@ pub fn build_snapshot(paths: &ConsolePaths) -> Result<ConsoleSnapshot, String> {
     })
 }
 
+fn build_home_projection(
+    paths: &ConsolePaths,
+    release_fields: &BTreeMap<String, String>,
+) -> HomeProjection {
+    let featured_docs = vec![
+        home_doc_from_release_field(
+            paths,
+            release_fields,
+            "project_introduction_archive_path",
+            "project-introduction",
+            localized("Project Introduction", "项目介绍"),
+            localized(
+                "A concise overview of what CodeWinter is, why it exists, and what capabilities it provides.",
+                "帮助你快速理解 CodeWinter 是什么、为什么存在，以及它提供了哪些核心能力。",
+            ),
+        ),
+        home_doc_from_release_field(
+            paths,
+            release_fields,
+            "usage_guide_archive_path",
+            "usage-guide",
+            localized("Usage Guide", "使用说明"),
+            localized(
+                "The operating guide for bootstrapping, daily collaboration, runtime coordination, and upgrades.",
+                "说明初始化接入、日常协作、运行态观察以及实例升级方式的系统使用文档。",
+            ),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    let sections = vec![
+        home_section(
+            "getting-started",
+            localized("Getting Started", "开始使用"),
+            localized(
+                "The first documents a human operator or manager thread should read when entering a CodeWinter workspace.",
+                "进入 CodeWinter 工作区后，管理者或管理线程应优先阅读的系统入口文档。",
+            ),
+            vec![
+                home_doc_from_path(
+                    paths,
+                    "readme",
+                    paths.codewinter_root.join("README.md"),
+                    localized("Repository Overview", "仓库总览"),
+                    localized(
+                        "The public-facing overview of CodeWinter as a portable collaboration control plane.",
+                        "面向仓库阅读者的公开总览，介绍 CodeWinter 的定位与核心能力。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "starter",
+                    paths.codewinter_root.join("read.md"),
+                    localized("Starter Entry", "Starter 入口"),
+                    localized(
+                        "The shared starter entry for manager and execution threads.",
+                        "管理线程与执行线程共用的统一启动入口。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "start-here",
+                    paths.control_plane_dir.join("start-here.md"),
+                    localized("Manager Navigation", "管理入口"),
+                    localized(
+                        "The manager-facing navigation page for the active control plane.",
+                        "面向管理者的控制面导航页，用于快速定位最常用入口。",
+                    ),
+                ),
+            ],
+        ),
+        home_section(
+            "core-docs",
+            localized("Core System Docs", "系统核心文档"),
+            localized(
+                "The platform-level documents that explain how CodeWinter is designed, versioned, and upgraded.",
+                "说明 CodeWinter 如何设计、如何版本化，以及如何升级的本体级文档。",
+            ),
+            vec![
+                home_doc_from_path(
+                    paths,
+                    "design-principles",
+                    paths.codewinter_root.join("_core").join("design-principles.md"),
+                    localized("Design Principles", "设计原则"),
+                    localized(
+                        "The foundational ideas behind progressive disclosure, runtime coordination, and harness engineering.",
+                        "解释渐进式披露、运行态协作层与 Harness Engineering 等核心设计思想。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "bootstrap-contract",
+                    paths.codewinter_root.join("_core").join("bootstrap-v1.md"),
+                    localized("Bootstrap Contract", "Bootstrap 协议"),
+                    localized(
+                        "Defines how a fresh CodeWinter folder becomes a running project instance.",
+                        "定义一个全新的 CodeWinter 文件夹如何被初始化成真实项目实例。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "versioning-model",
+                    paths.codewinter_root.join("_core").join("versioning-model-v1.md"),
+                    localized("Versioning Model", "版本模型"),
+                    localized(
+                        "Explains release versions, instance schema versions, and runtime coordination versions.",
+                        "说明发布版本、实例结构版本与运行协作版本之间的关系。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "upgrade-migration",
+                    paths.codewinter_root.join("_core").join("upgrade-migration-v1.md"),
+                    localized("Upgrade & Migration", "升级与迁移"),
+                    localized(
+                        "Defines how running instances should follow core upgrades through migration instead of replacement.",
+                        "说明运行中的项目实例应如何通过迁移，而不是覆盖文件，来跟进本体升级。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "tool-portability",
+                    paths.codewinter_root.join("_core").join("tool-portability.md"),
+                    localized("Tool Portability", "工具可迁移约定"),
+                    localized(
+                        "Describes how CodeWinter remains portable across different AI coding tools.",
+                        "说明 CodeWinter 如何在不同 AI coding 工具之间保持可迁移性。",
+                    ),
+                ),
+            ],
+        ),
+        home_section(
+            "release-docs",
+            localized("Release & Governance Docs", "发布与治理文档"),
+            localized(
+                "The documents that explain the current release baseline, governance rules, and release notes model.",
+                "说明当前发布基线、发布治理规则与发布说明模型的文档集合。",
+            ),
+            vec![
+                home_doc_from_path(
+                    paths,
+                    "release-manifest",
+                    paths.codewinter_root.join("_core").join("release-manifest.md"),
+                    localized("Release Manifest", "发布清单"),
+                    localized(
+                        "The current release baseline for the CodeWinter core.",
+                        "记录当前 CodeWinter 本体发布基线的清单文件。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "release-governance",
+                    paths.codewinter_root.join("_core").join("release-governance-v1.md"),
+                    localized("Release Governance", "发布治理"),
+                    localized(
+                        "Defines draft, candidate, and stable release channels.",
+                        "定义 draft、candidate 与 stable 等发布通道及其治理边界。",
+                    ),
+                ),
+                home_doc_from_path(
+                    paths,
+                    "release-notes-model",
+                    paths.codewinter_root.join("_core").join("release-notes-model-v1.md"),
+                    localized("Release Notes Model", "发布说明模型"),
+                    localized(
+                        "Defines how release notes should be written as migration-oriented release communications.",
+                        "定义发布说明应如何围绕迁移与升级决策来编写。",
+                    ),
+                ),
+                home_doc_from_release_field(
+                    paths,
+                    release_fields,
+                    "release_notes_path",
+                    "current-release-notes",
+                    localized("Current Release Notes", "当前版本说明"),
+                    localized(
+                        "The detailed notes for the current core release.",
+                        "当前本体发布版本的详细说明与变更摘要。",
+                    ),
+                ),
+            ],
+        ),
+        home_section(
+            "console-docs",
+            localized("Operator Console Docs", "Operator Console 文档"),
+            localized(
+                "Docs that describe the downstream operator console and its role relative to the CodeWinter core.",
+                "说明 Operator Console 的定位，以及它与 CodeWinter 本体之间边界关系的文档。",
+            ),
+            vec![home_doc_from_path(
+                paths,
+                "operator-console",
+                paths.codewinter_root.join("_console").join("README.md"),
+                localized("Operator Console Overview", "Operator Console 说明"),
+                localized(
+                    "Explains what the operator console does, what it is allowed to write, and how it stays subordinate to the core.",
+                    "说明 Operator Console 的作用、允许的写入边界，以及它如何保持从属于本体。",
+                ),
+            )],
+        ),
+    ]
+    .into_iter()
+    .filter(|section| !section.docs.is_empty())
+    .collect::<Vec<_>>();
+
+    HomeProjection {
+        featured_docs,
+        sections,
+    }
+}
 fn load_prompt_entries(paths: &ConsolePaths) -> Result<Vec<PromptEntry>, String> {
     let quick_prompts_path = paths.manager_toolkit_dir.join("quick-prompts.md");
     let mut entries = Vec::new();
@@ -601,7 +814,6 @@ fn group_instance_fields(fields: Vec<KeyValueField>) -> Vec<InstanceSection> {
 
     sections
 }
-
 fn push_section(
     sections: &mut Vec<InstanceSection>,
     id: &str,
@@ -655,11 +867,11 @@ fn build_upload_zones(
             ),
             headline: localized(
                 "Stage raw files for child-thread delivery",
-                "为子线程任务先暂存原始附件",
+                "为子线程任务暂存原始附件",
             ),
             body: localized(
                 "Use this drop zone to stage files that will later be organized into a real packet.md and task packet structure.",
-                "这里用于暂存后续要整理成 packet.md 和正式任务包的原始附件。",
+                "这里用于暂存后续要整理成 packet.md 和正式任务包结构的原始附件。",
             ),
             button_label: localized(
                 "Choose a file and send it to Task Packets",
@@ -673,7 +885,6 @@ fn build_upload_zones(
         },
     ]
 }
-
 fn group_deliverables(items: Vec<DeliverableItem>) -> Vec<DeliverableGroup> {
     let mut groups = BTreeMap::new();
 
@@ -729,6 +940,51 @@ fn group_deliverables(items: Vec<DeliverableItem>) -> Vec<DeliverableGroup> {
             }
         })
         .collect()
+}
+fn home_section(
+    id: &str,
+    title: LocalizedText,
+    description: LocalizedText,
+    docs: Vec<Option<HomeDoc>>,
+) -> HomeSection {
+    HomeSection {
+        id: id.to_string(),
+        title,
+        description,
+        docs: docs.into_iter().flatten().collect(),
+    }
+}
+
+fn home_doc_from_path(
+    paths: &ConsolePaths,
+    id: &str,
+    path: PathBuf,
+    label: LocalizedText,
+    description: LocalizedText,
+) -> Option<HomeDoc> {
+    if !path.exists() {
+        return None;
+    }
+
+    Some(HomeDoc {
+        id: id.to_string(),
+        label,
+        description,
+        path: paths.relative_display_path(&path),
+    })
+}
+
+fn home_doc_from_release_field(
+    paths: &ConsolePaths,
+    release_fields: &BTreeMap<String, String>,
+    field: &str,
+    id: &str,
+    label: LocalizedText,
+    description: LocalizedText,
+) -> Option<HomeDoc> {
+    let relative_path = release_fields.get(field)?;
+    let path = paths.resolve_read_path(relative_path).ok()?;
+    home_doc_from_path(paths, id, path, label, description)
 }
 
 fn collect_markdown_files(root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -880,7 +1136,6 @@ fn prompt_label_zh(id: &str, fallback: &str) -> String {
         _ => fallback.to_string(),
     }
 }
-
 fn prompt_label_en(id: &str, fallback: &str) -> String {
     match id {
         "bootstrap" => "Bootstrap".to_string(),
@@ -912,18 +1167,17 @@ fn prompt_description_en(id: &str) -> String {
 
 fn prompt_description_zh(id: &str) -> &'static str {
     match id {
-        "bootstrap" => "用于新项目第一次接入 CodeWinter，由管理线程完成初始化安装。",
+        "bootstrap" => "用于新项目第一次接入 CodeWinter，由管理线程完成初始化接管。",
         "start" => "用于执行线程第一次接手某个边界清晰的任务。",
         "resume" => "用于旧执行线程在新阶段或新问题中被重新唤起。",
         "handoff" => "用于把稳定上下文、动作边界和下一步建议交给另一个线程。",
         "runtime-update" => "用于登记运行态、上报阻塞、偏航、待决策事项或完成状态。",
-        "collab-request" => "用于发起跨线程协作请求，并把当前为什么需要协作说清楚。",
+        "collab-request" => "用于发起跨线程协作请求，并把当前为什么需要协作说明清楚。",
         "archive-direct" => "用于低风险、小范围任务的直接归档。",
         "archive-bundle" => "用于跨线程或高价值任务的归档包准备与确认。",
         _ => "用于从管理工具箱中打开这份提示词模板。",
     }
 }
-
 fn clean_prompt_description(value: &str) -> String {
     value
         .trim()
@@ -932,7 +1186,6 @@ fn clean_prompt_description(value: &str) -> String {
         .trim()
         .to_string()
 }
-
 fn first_heading(path: &Path) -> Result<Option<String>, String> {
     let content = read_utf8_file(path)?;
     Ok(content

@@ -14,6 +14,20 @@ export interface ReleaseSummary {
   codename?: string
 }
 
+export interface HomeDoc {
+  id: string
+  label: LocalizedText
+  description: LocalizedText
+  path: string
+}
+
+export interface HomeSection {
+  id: string
+  title: LocalizedText
+  description: LocalizedText
+  docs: HomeDoc[]
+}
+
 export interface DocumentSection {
   title: string
   lines: string[]
@@ -125,6 +139,10 @@ export interface ConsoleSnapshot {
   generatedAt: string
   codewinterRoot: string
   release: ReleaseSummary
+  home: {
+    featuredDocs: HomeDoc[]
+    sections: HomeSection[]
+  }
   managerBrief: {
     path: string
     sections: DocumentSection[]
