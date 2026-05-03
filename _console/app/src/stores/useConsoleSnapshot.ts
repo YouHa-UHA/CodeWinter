@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { mockSnapshot } from '../lib/mockSnapshot'
 import {
@@ -22,6 +22,49 @@ import type {
 type SnapshotSetter = Dispatch<SetStateAction<ConsoleSnapshot>>
 type LoadingSetter = Dispatch<SetStateAction<boolean>>
 type ErrorSetter = Dispatch<SetStateAction<string | null>>
+
+function createEmptySnapshot(): ConsoleSnapshot {
+  return {
+    snapshotVersion: 1,
+    generatedAt: '',
+    codewinterRoot: '',
+    release: {
+      version: 'unknown',
+      channel: 'draft',
+    },
+    home: {
+      featuredDocs: [],
+      sections: [],
+    },
+    managerBrief: {
+      path: '',
+      sections: [],
+    },
+    instanceManifest: {
+      path: '',
+      fields: [],
+      sections: [],
+    },
+    workbench: {
+      prompts: [],
+      uploadZones: [],
+      deliverableGroups: [],
+    },
+    runtime: {
+      threads: [],
+      collabRequests: [],
+      signals: [],
+      alerts: [],
+    },
+    explorer: {
+      entries: [],
+    },
+    health: {
+      refreshStatus: 'refreshing',
+      warnings: [],
+    },
+  }
+}
 
 function extractCanonicalCopyBlock(content: string): string {
   const canonicalMatch = content.match(/```text\r?\n([\s\S]*?)\r?\n```/)
@@ -66,57 +109,111 @@ async function syncSnapshot(
     const nextSnapshot = await loadSnapshot()
     setSnapshot(nextSnapshot)
   } catch (refreshError) {
-    setError(
-      refreshError instanceof Error
-        ? refreshError.message
-        : 'Unable to load the latest console snapshot.',
-    )
+    if (refreshError instanceof Error) {
+      setError((refreshError as Error).message)
+    } else {
+      setError('Unable to load the latest console snapshot.')
+    }
   } finally {
     setLoading(false)
   }
 }
 
 export function useConsoleSnapshot() {
-  const [snapshot, setSnapshot] = useState<ConsoleSnapshot>(mockSnapshot)
+  const [snapshot, setSnapshot] = useState<ConsoleSnapshot>(() =>
+    isTauriRuntime() ? createEmptySnapshot() : mockSnapshot,
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [uploadFeedbacks, setUploadFeedbacks] = useState<Record<UploadTarget, UploadFeedback>>(
     initialUploadFeedback,
   )
+  const mountedRef = useRef(false)
+  const syncInFlightRef = useRef(false)
+  const syncQueuedRef = useRef(false)
+  const refreshTimerRef = useRef<number | undefined>(undefined)
+
+  const runSnapshotSync = useCallback(async () => {
+    if (syncInFlightRef.current) {
+      syncQueuedRef.current = true
+      return
+    }
+
+    syncInFlightRef.current = true
+
+    try {
+      do {
+        syncQueuedRef.current = false
+
+        if (!mountedRef.current) {
+          return
+        }
+
+        await syncSnapshot(setSnapshot, setLoading, setError)
+      } while (mountedRef.current && syncQueuedRef.current)
+    } finally {
+      syncInFlightRef.current = false
+    }
+  }, [])
+
+  const scheduleSnapshotSync = useCallback(() => {
+    if (refreshTimerRef.current !== undefined) {
+      window.clearTimeout(refreshTimerRef.current)
+    }
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = undefined
+      void runSnapshotSync()
+    }, 450)
+  }, [runSnapshotSync])
 
   useEffect(() => {
     let unlisten: (() => void) | undefined
+    mountedRef.current = true
 
     const init = async () => {
-      await syncSnapshot(setSnapshot, setLoading, setError)
+      await runSnapshotSync()
 
       if (!isTauriRuntime()) {
         return
       }
 
       unlisten = await listenSnapshotRefresh(() => {
-        void syncSnapshot(setSnapshot, setLoading, setError)
+        scheduleSnapshotSync()
       })
 
-      await startWatch()
+      try {
+        await startWatch()
+      } catch (watchError) {
+        setError(
+          watchError instanceof Error
+            ? (watchError as Error).message
+            : 'Unable to start the file watcher.',
+        )
+      }
     }
 
     void init()
 
     return () => {
+      mountedRef.current = false
+      if (refreshTimerRef.current !== undefined) {
+        window.clearTimeout(refreshTimerRef.current)
+        refreshTimerRef.current = undefined
+      }
       unlisten?.()
       if (isTauriRuntime()) {
         void stopWatch()
       }
     }
-  }, [])
+  }, [runSnapshotSync, scheduleSnapshotSync])
 
-  const refresh = async () => syncSnapshot(setSnapshot, setLoading, setError)
+  const refresh = async () => runSnapshotSync()
 
   const copyPrompt = async (entry: PromptEntry) => {
     const rawText = isTauriRuntime()
       ? await readTextFile(entry.path)
-      : `# ${entry.label.en}\n\n\`\`\`text\nMock prompt preview: ${entry.label.en}\nPath: ${entry.path}\n\`\`\``
+      : `# ${entry.label.en}\n\n\`\`\`text\nMock prompt preview: ${entry.label.en}\n\`\`\``
     const text = extractCanonicalCopyBlock(rawText)
 
     await navigator.clipboard.writeText(text)

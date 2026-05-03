@@ -23,6 +23,7 @@ const { Paragraph, Text, Title } = Typography
 
 interface WorkbenchPageProps {
   language: Language
+  query: string
   prompts: PromptEntry[]
   uploadZones: UploadZone[]
   deliverableGroups: DeliverableGroup[]
@@ -62,7 +63,7 @@ function kindLabel(kind: DeliverableItem['kind'], language: Language) {
 function uploadStateLabel(state: UploadFeedback['state'], language: Language) {
   switch (state) {
     case 'uploading':
-      return language === 'zh' ? '上传中' : 'Uploading'
+      return language === 'zh' ? '写入中' : 'Uploading'
     case 'done':
       return language === 'zh' ? '已完成' : 'Done'
     case 'error':
@@ -81,7 +82,7 @@ function uploadMessage(feedback: UploadFeedback, language: Language) {
   }
 
   if (feedback.savedPath) {
-    return language === 'zh' ? `已写入 ${feedback.savedPath}` : `Saved to ${feedback.savedPath}`
+    return language === 'zh' ? '文件已写入安全入口。' : 'File saved to the selected intake zone.'
   }
 
   if (feedback.errorMessage) {
@@ -91,8 +92,52 @@ function uploadMessage(feedback: UploadFeedback, language: Language) {
   return null
 }
 
+function matchesQuery(values: string[], query: string) {
+  if (!query) {
+    return true
+  }
+
+  return values.some((value) => value.toLowerCase().includes(query))
+}
+
+function workbenchHeadline(language: Language) {
+  return language === 'zh'
+    ? '把最常用的提示词、安全写入与正式输出，安静地放在同一处。'
+    : 'Keep your most-used prompts, safe intake, and polished outputs in one quieter place.'
+}
+
+function normalizePromptKey(path: string) {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^CodeWinter\//i, '')
+    .toLowerCase()
+}
+
+function dedupePrompts(prompts: PromptEntry[], language: Language) {
+  const seenPaths = new Set<string>()
+  const seenIds = new Set<string>()
+  const seenLabels = new Set<string>()
+
+  return prompts.filter((entry) => {
+    const pathKey = normalizePromptKey(entry.path)
+    const idKey = entry.id.trim().toLowerCase()
+    const labelKey = pickLocalizedText(entry.label, language).trim().toLowerCase()
+
+    if (seenPaths.has(pathKey) || seenIds.has(idKey) || seenLabels.has(labelKey)) {
+      return false
+    }
+
+    seenPaths.add(pathKey)
+    seenIds.add(idKey)
+    seenLabels.add(labelKey)
+    return true
+  })
+}
+
 export function WorkbenchPage({
   language,
+  query,
   prompts,
   uploadZones,
   deliverableGroups,
@@ -105,244 +150,268 @@ export function WorkbenchPage({
   const copy =
     language === 'zh'
       ? {
-          promptsKicker: '提示词中心',
-          promptsTitle: '高频操作入口',
-          promptsSummary:
-            '把最常用的提示词做成一眼可识别、一步可复制的工作面，而不是埋在目录深处。',
-          copyReady: '可直接复制',
+          title: '工作台',
+          summary: workbenchHeadline(language),
+          support: '当你需要发起线程、投递资料或取回结果时，入口都应该足够近、足够安静。',
+          primaryAction: '复制首个提示词',
+          secondaryAction: '查看最新结果',
+          promptTitle: '高频提示词中心',
+          promptSummary: '把最常用的线程动作，放在一眼就能拿到的位置。',
+          writeTitle: '安全写入入口',
+          writeSummary: '原始资料先进入安全写入区，再由控制面决定如何流入后续协作。',
           copy: '复制',
           preview: '预览',
           open: '打开',
-          uploadKicker: '投递区',
-          uploadTitle: '安全写入入口',
-          deliverablesKicker: '正式输出',
-          deliverablesTitle: '交付与结果访问',
-          deliverablesSummary: '优先显示最终版本，再保留 Index 和线程输出作为上下文入口。',
-          readOnly: '只读',
-          noDeliverables: '当前还没有检测到正式输出文件。',
-          itemCount: '项',
-          notRecorded: '未记录',
+          write: '导入文件',
+          emptyPrompts: '当前没有可复制的提示词模板。',
+          deliverablesTitle: '正式输出与结果入口',
+          deliverablesSummary: '先看 final，再通过 index 和 thread outputs 追回上下文。',
+          readOnly: '只读浏览',
           latestFiles: '最近文件',
+          notRecorded: '未记录',
+          noDeliverables: '当前还没有检测到正式输出或结果文件。',
+          itemCount: '项',
         }
       : {
-          promptsKicker: 'Prompt Center',
-          promptsTitle: 'High-frequency operator actions',
-          promptsSummary:
-            'Keep the most-used prompts visible, copyable, and calm to operate instead of burying them in the file tree.',
-          copyReady: 'Copy-ready',
+          title: 'Workbench',
+          summary: workbenchHeadline(language),
+          support:
+            'When you need to launch threads, hand off raw files, or retrieve finished results, the route should feel close and quiet.',
+          primaryAction: 'Copy first prompt',
+          secondaryAction: 'Open latest result',
+          promptTitle: 'High-frequency Prompt Center',
+          promptSummary: 'Keep the operator actions you use most within immediate reach.',
+          writeTitle: 'Safe write zones',
+          writeSummary:
+            'Raw materials enter through guarded drop points before the control plane routes them onward.',
           copy: 'Copy',
           preview: 'Preview',
           open: 'Open',
-          uploadKicker: 'Intake',
-          uploadTitle: 'Safe write surfaces',
-          deliverablesKicker: 'Deliverables',
-          deliverablesTitle: 'Result and deliverable access',
+          write: 'Import file',
+          emptyPrompts: 'No copy-ready prompt templates are available right now.',
+          deliverablesTitle: 'Deliverables and result access',
           deliverablesSummary:
-            'Surface final versions first while keeping index and thread outputs close enough for context.',
+            'Start with final outputs, then use index files and thread outputs to recover context.',
           readOnly: 'Read-only',
-          noDeliverables: 'No deliverable files have been detected yet.',
-          itemCount: 'items',
-          notRecorded: 'Not recorded',
           latestFiles: 'Recent files',
+          notRecorded: 'Not recorded',
+          noDeliverables: 'No deliverable or result files have been detected yet.',
+          itemCount: 'items',
         }
+
+  const filteredPrompts = dedupePrompts(
+    prompts.filter((entry) =>
+      matchesQuery(
+        [
+          pickLocalizedText(entry.label, language),
+          pickLocalizedText(entry.description, language),
+          entry.path,
+        ],
+        query,
+      ),
+    ),
+    language,
+  )
+
+  const filteredDeliverableGroups = deliverableGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => matchesQuery([item.label, item.path], query)),
+    }))
+    .filter((group) => group.items.length > 0 || !query)
 
   const inputIds = {
     inbox: useId(),
     taskPacketDrop: useId(),
   }
 
+  const firstPrompt = filteredPrompts[0]
+  const firstDeliverable = filteredDeliverableGroups[0]?.items[0]
+
   return (
-    <div className="page-stack">
-      <section className="content-section">
-        <div className="section-heading">
-          <div>
-            <Text className="section-kicker">{copy.promptsKicker}</Text>
-            <Title level={4}>{copy.promptsTitle}</Title>
-          </div>
-          <Paragraph type="secondary">{copy.promptsSummary}</Paragraph>
+    <div className="page-stack workbench-page-v3">
+      <section className="workbench-hero-v3">
+        <div className="surface-panel workbench-hero-copy-card">
+          <Text className="section-kicker">WORKBENCH</Text>
+          <Title level={1}>{copy.title}</Title>
+          <Paragraph className="hero-lead">{copy.summary}</Paragraph>
+          <Paragraph className="hero-support">{copy.support}</Paragraph>
+          <Space wrap>
+            <Button
+              type="primary"
+              disabled={!firstPrompt}
+              onClick={() => {
+                if (firstPrompt) {
+                  void onCopyPrompt(firstPrompt)
+                }
+              }}
+            >
+              {copy.primaryAction}
+            </Button>
+            <Button
+              disabled={!firstDeliverable}
+              onClick={() => {
+                if (firstDeliverable) {
+                  void onPreview(firstDeliverable.label, firstDeliverable.path)
+                }
+              }}
+            >
+              {copy.secondaryAction}
+            </Button>
+          </Space>
         </div>
 
-        <div className="prompt-shelf">
-          {prompts.map((entry) => (
-            <article key={entry.id} className="prompt-tile solid-surface">
-              <div className="prompt-tile-head">
-                <div className="prompt-badge">
-                  <CopyOutlined />
-                </div>
-                <Tag color="processing">{copy.copyReady}</Tag>
-              </div>
-
-              <div className="prompt-tile-copy">
-                <Title level={5}>{pickLocalizedText(entry.label, language)}</Title>
-                <Paragraph type="secondary">
-                  {pickLocalizedText(entry.description, language)}
-                </Paragraph>
-                <Paragraph className="path-text">{entry.path}</Paragraph>
-              </div>
-
-              <Space wrap>
-                <Button
-                  type="primary"
-                  icon={<CopyOutlined />}
-                  onClick={() => void onCopyPrompt(entry)}
-                >
-                  {copy.copy}
-                </Button>
-                <Button
-                  icon={<EyeOutlined />}
-                  onClick={() => void onPreview(pickLocalizedText(entry.label, language), entry.path)}
-                >
-                  {copy.preview}
-                </Button>
-                <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(entry.path)}>
-                  {copy.open}
-                </Button>
-              </Space>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="content-section">
-        <div className="section-heading">
-          <div>
-            <Text className="section-kicker">{copy.uploadKicker}</Text>
-            <Title level={4}>{copy.uploadTitle}</Title>
-          </div>
-        </div>
-
-        <div className="upload-shelf">
+        <aside className="workbench-write-stack">
           {uploadZones.map((zone) => {
             const feedback = uploadFeedbacks[zone.target]
-            const feedbackMessage = uploadMessage(feedback, language)
+            const message = uploadMessage(feedback, language)
             const inputId = inputIds[zone.target]
 
             return (
-              <article key={zone.target} className="upload-zone glass-sheet">
-                <div className="upload-zone-head">
-                  <div>
-                    <Text className="section-kicker">{pickLocalizedText(zone.kicker, language)}</Text>
-                    <Title level={4}>{pickLocalizedText(zone.title, language)}</Title>
+              <article key={zone.target} className="surface-panel workbench-intake-card">
+                <div className="upload-card-head">
+                  <div className="intake-summary-icon">
+                    <InboxOutlined />
                   </div>
-                  <Tag
-                    color={
-                      feedback.state === 'error'
-                        ? 'red'
-                        : feedback.state === 'done'
-                          ? 'green'
-                          : 'processing'
-                    }
-                  >
+                  <Tag color={feedback.state === 'error' ? 'error' : 'processing'}>
                     {uploadStateLabel(feedback.state, language)}
                   </Tag>
                 </div>
 
-                <Paragraph type="secondary">{pickLocalizedText(zone.body, language)}</Paragraph>
-                <Paragraph className="path-text">{zone.path}</Paragraph>
-
-                <div className="upload-zone-cta">
-                  <div className="upload-zone-icon">
-                    <InboxOutlined />
-                  </div>
-                  <div>
-                    <Title level={5}>{pickLocalizedText(zone.headline, language)}</Title>
-                    <input
-                      id={inputId}
-                      type="file"
-                      className="file-input-hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
-                        if (file) {
-                          void onUploadFile(zone.target, file)
-                        }
-                        event.currentTarget.value = ''
-                      }}
-                    />
-                    <label htmlFor={inputId}>
-                      <Button type="primary" icon={<UploadOutlined />}>
-                        {pickLocalizedText(zone.buttonLabel, language)}
-                      </Button>
-                    </label>
-                  </div>
+                <div>
+                  <Text className="section-kicker">{pickLocalizedText(zone.kicker, language)}</Text>
+                  <Title level={4}>{pickLocalizedText(zone.title, language)}</Title>
                 </div>
 
-                {feedbackMessage ? <Text type="secondary">{feedbackMessage}</Text> : null}
+                <Paragraph>{pickLocalizedText(zone.body, language)}</Paragraph>
 
-                <div className="subsection-strip">
+                <div className="prompt-card-actions">
+                  <input
+                    id={inputId}
+                    type="file"
+                    className="file-input-hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (file) {
+                        void onUploadFile(zone.target, file)
+                      }
+                      event.currentTarget.value = ''
+                    }}
+                  />
+                  <label htmlFor={inputId}>
+                    <Button type="primary" icon={<UploadOutlined />}>
+                      {copy.write}
+                    </Button>
+                  </label>
+                  <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(zone.path)}>
+                    {copy.open}
+                  </Button>
+                </div>
+
+                {message ? <Text type="secondary">{message}</Text> : null}
+
+                <div className="mini-file-list">
                   <Text className="section-kicker">{copy.latestFiles}</Text>
+                  {zone.items.length === 0 ? (
+                    <Text type="secondary">{pickLocalizedText(zone.emptyState, language)}</Text>
+                  ) : (
+                    zone.items.slice(0, 3).map((item) => (
+                      <div key={item.path} className="mini-file-row">
+                        <span>{item.name}</span>
+                        <Text type="secondary">{item.modifiedAt ?? copy.notRecorded}</Text>
+                      </div>
+                    ))
+                  )}
                 </div>
-
-                {zone.items.length === 0 ? (
-                  <div className="solid-surface empty-surface compact-empty">
-                    <Empty description={pickLocalizedText(zone.emptyState, language)} />
-                  </div>
-                ) : (
-                  <div className="entry-list compact-list">
-                    {zone.items.map((item) => (
-                      <article key={item.path} className="entry-row compact-entry-row">
-                        <div className="entry-row-copy">
-                          <Title level={5}>{item.name}</Title>
-                          <Paragraph className="path-text">{item.path}</Paragraph>
-                          <Text type="secondary">{item.modifiedAt ?? copy.notRecorded}</Text>
-                        </div>
-                        <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(item.path)}>
-                          {copy.open}
-                        </Button>
-                      </article>
-                    ))}
-                  </div>
-                )}
               </article>
             )
           })}
-        </div>
+        </aside>
       </section>
 
-      <section className="content-section">
-        <div className="section-heading">
+      <section className="section-block">
+        <div className="section-block-head">
           <div>
-            <Text className="section-kicker">{copy.deliverablesKicker}</Text>
-            <Title level={4}>{copy.deliverablesTitle}</Title>
+            <Title level={3}>{copy.promptTitle}</Title>
+            <Paragraph>{copy.promptSummary}</Paragraph>
           </div>
-          <Space wrap>
-            <Text type="secondary">{copy.deliverablesSummary}</Text>
-            <Tag color="blue">{copy.readOnly}</Tag>
-          </Space>
         </div>
 
-        {deliverableGroups.length === 0 ? (
-          <div className="solid-surface empty-surface">
+        {filteredPrompts.length === 0 ? (
+          <div className="surface-panel empty-surface">
+            <Empty description={copy.emptyPrompts} />
+          </div>
+        ) : (
+          <div className="prompt-grid-v2">
+            {filteredPrompts.map((entry) => (
+              <article key={`${entry.id}-${entry.path}`} className="surface-panel prompt-card-v3">
+                <div className="prompt-card-head">
+                  <div className="prompt-card-icon">
+                    <CopyOutlined />
+                  </div>
+                </div>
+                <Title level={4}>{pickLocalizedText(entry.label, language)}</Title>
+                <Text type="secondary">{entry.id.toUpperCase()}</Text>
+                <Paragraph>{pickLocalizedText(entry.description, language)}</Paragraph>
+                <div className="prompt-card-actions">
+                  <Button type="primary" icon={<CopyOutlined />} onClick={() => void onCopyPrompt(entry)}>
+                    {copy.copy}
+                  </Button>
+                  <Button
+                    icon={<EyeOutlined />}
+                    onClick={() => void onPreview(pickLocalizedText(entry.label, language), entry.path)}
+                  >
+                    {copy.preview}
+                  </Button>
+                  <Button icon={<FolderOpenOutlined />} onClick={() => void onOpenPath(entry.path)}>
+                    {copy.open}
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="section-block">
+        <div className="section-block-head">
+          <div>
+            <Title level={3}>{copy.deliverablesTitle}</Title>
+            <Paragraph>{copy.deliverablesSummary}</Paragraph>
+          </div>
+          <Tag>{copy.readOnly}</Tag>
+        </div>
+
+        {filteredDeliverableGroups.length === 0 ? (
+          <div className="surface-panel empty-surface">
             <Empty description={copy.noDeliverables} />
           </div>
         ) : (
-          <div className="deliverable-stack">
-            {deliverableGroups.map((group) => (
-              <section key={group.id} className="solid-surface deliverable-group">
-                <div className="section-heading section-heading-tight">
+          <div className="deliverable-group-stack-v2">
+            {filteredDeliverableGroups.map((group) => (
+              <section key={group.id} className="surface-panel deliverable-panel deliverable-panel-v3">
+                <div className="deliverable-panel-head">
                   <div>
-                    <Title level={5}>{pickLocalizedText(group.title, language)}</Title>
-                    <Paragraph type="secondary">
-                      {pickLocalizedText(group.description, language)}
-                    </Paragraph>
+                    <Title level={4}>{pickLocalizedText(group.title, language)}</Title>
+                    <Paragraph>{pickLocalizedText(group.description, language)}</Paragraph>
                   </div>
                   <Tag>
                     {group.items.length} {copy.itemCount}
                   </Tag>
                 </div>
 
-                <div className="entry-list">
+                <div className="deliverable-list">
                   {group.items.map((item) => (
-                    <article key={item.path} className="entry-row">
-                      <div className="entry-row-main">
-                        <div className="entry-row-icon">
+                    <article key={item.path} className="deliverable-row">
+                      <div className="deliverable-row-main">
+                        <div className="deliverable-row-icon">
                           <FileSearchOutlined />
                         </div>
-                        <div className="entry-row-copy">
+                        <div>
                           <Space wrap>
-                            <Title level={5}>{item.label}</Title>
+                            <strong>{item.label}</strong>
                             <Tag color={kindColor(item.kind)}>{kindLabel(item.kind, language)}</Tag>
                           </Space>
-                          <Paragraph className="path-text">{item.path}</Paragraph>
                         </div>
                       </div>
                       <Space wrap>

@@ -6,6 +6,10 @@
 适用场景：新项目第一次接入 `CodeWinter`
 1. `./CodeWinter/02-manager-toolkit/bootstrap-manager.md`
 
+## Bootstrap Greenfield
+适用场景：当前项目目录基本为空，只有 `CodeWinter`，需要从需求与约束出发先完成项目塑形
+1. `./CodeWinter/02-manager-toolkit/bootstrap-greenfield.md`
+
 ## Start
 适用场景：执行线程第一次接手某个边界清晰的任务
 1. `./CodeWinter/02-manager-toolkit/thread-start.md`

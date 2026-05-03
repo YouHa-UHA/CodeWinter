@@ -26,3 +26,17 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running CodeWinter operator console");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_builds_and_serializes() {
+        let paths = ConsolePaths::discover().expect("test should resolve console paths");
+        let snapshot = snapshot::build_snapshot(&paths).expect("snapshot should build");
+        let json = serde_json::to_string(&snapshot).expect("snapshot should serialize");
+
+        assert!(json.contains("\"snapshotVersion\""));
+    }
+}

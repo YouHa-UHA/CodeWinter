@@ -1,419 +1,1146 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use crate::{
     models::{
         CollaborationRequestSummary, ConsoleSnapshot, DeliverableGroup, DeliverableItem,
         DocumentProjection, ExplorerEntry, ExplorerProjection, HealthProjection, HomeDoc,
         HomeProjection, HomeSection, InboxItem, InstanceManifestProjection, InstanceSection,
-        KeyValueField, LocalizedText, PromptEntry, ReleaseSummary, RuntimeAlert,
-        RuntimeProjection, ThreadSummary, UploadZoneProjection, WorkbenchProjection,
+        KeyValueField, LocalizedText, PromptEntry, ReleaseSummary, RuntimeAlert, RuntimeProjection,
+        RuntimeSignalCard, ThreadSummary, UploadZoneProjection, WorkbenchProjection,
     },
-    parser::{parse_field_map, parse_key_value_fields, parse_markdown_sections, read_utf8_file},
+    parser::{parse_field_map, parse_key_value_fields, parse_markdown_sections},
     paths::ConsolePaths,
 };
 
 pub fn build_snapshot(paths: &ConsolePaths) -> Result<ConsoleSnapshot, String> {
+    let generated_at = Utc::now().to_rfc3339();
     let release_manifest_path = paths.codewinter_root.join("_core").join("release-manifest.md");
+    let release_fields = parse_field_map(&release_manifest_path)?;
+    let release = build_release_summary(&release_fields);
+
     let manager_brief_path = paths.control_plane_dir.join("manager-brief.md");
     let instance_manifest_path = paths.control_plane_dir.join("instance-manifest.md");
+    let quick_prompts_path = paths.manager_toolkit_dir.join("quick-prompts.md");
+    let thread_board_path = paths.control_plane_dir.join("thread-board.md");
 
-    let release_fields = parse_field_map(&release_manifest_path)?;
-    let manager_sections = parse_markdown_sections(&manager_brief_path)?;
+    let manager_brief = build_document_projection(paths, &manager_brief_path)?;
     let instance_fields = parse_key_value_fields(&instance_manifest_path)?;
     let instance_field_map = fields_to_map(&instance_fields);
-
-    let prompts = load_prompt_entries(paths)?;
-    let threads = load_threads(paths)?;
-    let collab_requests = load_collaboration_requests(paths)?;
-    let inbox_items = load_inbox_items(paths, &paths.inbox_dir)?;
-    let task_packet_drop_items = load_inbox_items(paths, &paths.task_packet_drop_dir)?;
-    let deliverables = load_deliverables(paths)?;
-    let explorer_entries = load_explorer_entries(paths, &release_fields);
-    let alerts = build_runtime_alerts(&threads, &collab_requests, &instance_field_map);
-    let warnings = build_health_warnings(&instance_field_map, &threads);
-    let generated_at = Utc::now().to_rfc3339();
+    let instance_manifest = build_instance_manifest_projection(paths, &instance_manifest_path, instance_fields)?;
+    let home = build_home_projection(paths, &release_fields);
+    let workbench = build_workbench_projection(paths, &quick_prompts_path)?;
+    let runtime = build_runtime_projection(paths, &instance_field_map, &thread_board_path)?;
+    let explorer = build_explorer_projection(paths)?;
+    let health = build_health_projection(&instance_field_map, &runtime, &generated_at);
 
     Ok(ConsoleSnapshot {
         snapshot_version: 1,
-        generated_at: generated_at.clone(),
-        codewinter_root: paths.codewinter_root.to_string_lossy().replace('\\', "/"),
-        release: ReleaseSummary {
-            version: release_fields
-                .get("release_version")
-                .cloned()
-                .unwrap_or_else(|| "unknown".to_string()),
-            channel: release_fields
-                .get("release_channel")
-                .cloned()
-                .unwrap_or_else(|| "unknown".to_string()),
-            theme: release_fields.get("release_theme").cloned(),
-            codename: release_fields.get("release_codename").cloned(),
-        },
-        home: build_home_projection(paths, &release_fields),
-        manager_brief: DocumentProjection {
-            path: paths.relative_display_path(&manager_brief_path),
-            sections: manager_sections,
-        },
-        instance_manifest: InstanceManifestProjection {
-            path: paths.relative_display_path(&instance_manifest_path),
-            fields: instance_fields.clone(),
-            sections: group_instance_fields(instance_fields),
-        },
-        workbench: WorkbenchProjection {
-            prompts,
-            upload_zones: build_upload_zones(paths, inbox_items, task_packet_drop_items),
-            deliverable_groups: group_deliverables(deliverables),
-        },
-        runtime: RuntimeProjection {
-            manager_lease_holder: instance_field_map.get("manager_lease_holder").cloned(),
-            threads,
-            collab_requests,
-            alerts,
-        },
-        explorer: ExplorerProjection {
-            entries: explorer_entries,
-        },
-        health: HealthProjection {
-            refresh_status: if warnings.is_empty() {
-                "idle".to_string()
-            } else {
-                "degraded".to_string()
-            },
-            last_good_at: Some(generated_at),
-            warnings,
-        },
+        generated_at,
+        codewinter_root: paths.relative_display_path(&paths.codewinter_root),
+        release,
+        home,
+        manager_brief,
+        instance_manifest,
+        workbench,
+        runtime,
+        explorer,
+        health,
     })
 }
 
-fn build_home_projection(
+fn build_release_summary(fields: &BTreeMap<String, String>) -> ReleaseSummary {
+    ReleaseSummary {
+        version: field_or(fields, "release_version").unwrap_or_else(|| "unknown".to_string()),
+        channel: field_or(fields, "release_channel").unwrap_or_else(|| "draft".to_string()),
+        theme: field_or(fields, "release_theme"),
+        codename: field_or(fields, "release_codename"),
+    }
+}
+
+fn build_document_projection(paths: &ConsolePaths, path: &Path) -> Result<DocumentProjection, String> {
+    Ok(DocumentProjection {
+        path: paths.relative_display_path(path),
+        sections: parse_markdown_sections(path)?,
+    })
+}
+
+fn build_instance_manifest_projection(
     paths: &ConsolePaths,
-    release_fields: &BTreeMap<String, String>,
-) -> HomeProjection {
+    path: &Path,
+    fields: Vec<KeyValueField>,
+) -> Result<InstanceManifestProjection, String> {
+    let field_map = fields_to_map(&fields);
+
+    Ok(InstanceManifestProjection {
+        path: paths.relative_display_path(path),
+        fields,
+        sections: vec![
+            build_instance_section(
+                "instance-basics",
+                lt("Instance Basics", "实例基础"),
+                lt(
+                    "Identity, ownership, and lifecycle state for the current project instance.",
+                    "用于说明当前项目实例的身份、接管状态与生命周期位置。",
+                ),
+                &field_map,
+                &[
+                    "instance_name",
+                    "workspace_root",
+                    "status",
+                    "compatibility_window",
+                    "manager_lease_holder",
+                    "last_bootstrap_at",
+                    "last_upgrade_at",
+                ],
+            ),
+            build_instance_section(
+                "release-baseline",
+                lt("Release Baseline", "发布基线"),
+                lt(
+                    "Which CodeWinter core release this instance is aligned with right now.",
+                    "说明当前实例对齐的是哪一版 CodeWinter 本体发布。",
+                ),
+                &field_map,
+                &[
+                    "release_version",
+                    "release_channel",
+                    "release_codename",
+                    "release_theme",
+                    "release_notes_path",
+                    "project_introduction_archive_path",
+                    "usage_guide_archive_path",
+                ],
+            ),
+            build_instance_section(
+                "compatibility-contracts",
+                lt("Compatibility & Contracts", "兼容与协议"),
+                lt(
+                    "Schema, runtime, and contract versions used to reason about instance migration.",
+                    "用于判断实例升级与迁移边界的结构、运行与协议版本。",
+                ),
+                &field_map,
+                &[
+                    "instance_schema_version",
+                    "runtime_coordination_version",
+                    "bootstrap_contract_version",
+                    "migration_contract_version",
+                    "release_governance_version",
+                    "release_notes_model_version",
+                ],
+            ),
+            build_instance_section(
+                "control-plane-links",
+                lt("Control Plane Links", "控制面入口"),
+                lt(
+                    "Quick references to the control-plane files this instance currently relies on.",
+                    "指向当前实例核心控制面文件的快速入口。",
+                ),
+                &field_map,
+                &[
+                    "manager_brief",
+                    "active_queue",
+                    "thread_board",
+                    "upgrade_plan",
+                    "upgrade_log",
+                ],
+            ),
+        ],
+    })
+}
+
+fn build_instance_section(
+    id: &str,
+    title: LocalizedText,
+    description: LocalizedText,
+    fields: &BTreeMap<String, String>,
+    keys: &[&str],
+) -> InstanceSection {
+    InstanceSection {
+        id: id.to_string(),
+        title,
+        description,
+        fields: keys
+            .iter()
+            .filter_map(|key| {
+                fields.get(*key).map(|value| KeyValueField {
+                    key: (*key).to_string(),
+                    value: value.to_string(),
+                })
+            })
+            .collect(),
+    }
+}
+
+fn build_home_projection(paths: &ConsolePaths, release_fields: &BTreeMap<String, String>) -> HomeProjection {
+    let release_version = release_fields
+        .get("release_version")
+        .cloned()
+        .unwrap_or_else(|| "v0.1.1".to_string());
+    let release_notes_path = release_fields
+        .get("release_notes_path")
+        .map(|path| resolve_display_or_raw(paths, path))
+        .unwrap_or_else(|| paths.relative_display_path(&paths.releases_dir.join(format!("{release_version}.md"))));
+    let project_intro_path = release_fields
+        .get("project_introduction_archive_path")
+        .map(|path| resolve_display_or_raw(paths, path))
+        .unwrap_or_else(|| {
+            paths.relative_display_path(
+                &paths
+                    .releases_dir
+                    .join(format!("{release_version}.project-introduction.md")),
+            )
+        });
+    let usage_guide_path = release_fields
+        .get("usage_guide_archive_path")
+        .map(|path| resolve_display_or_raw(paths, path))
+        .unwrap_or_else(|| {
+            paths.relative_display_path(
+                &paths
+                    .releases_dir
+                    .join(format!("{release_version}.usage-guide.md")),
+            )
+        });
+
     let featured_docs = vec![
-        home_doc_from_release_field(
-            paths,
-            release_fields,
-            "project_introduction_archive_path",
-            "project-introduction",
-            localized("Project Introduction", "项目介绍"),
-            localized(
-                "A concise overview of what CodeWinter is, why it exists, and what capabilities it provides.",
-                "帮助你快速理解 CodeWinter 是什么、为什么存在，以及它提供了哪些核心能力。",
+        HomeDoc {
+            id: "project-introduction".to_string(),
+            label: lt("Project Introduction", "项目介绍"),
+            description: lt(
+                "Understand what CodeWinter is, why it exists, and which collaboration capabilities it provides.",
+                "帮助你快速理解 CodeWinter 是什么、为什么存在，以及它提供了哪些核心协作能力。",
             ),
-        ),
-        home_doc_from_release_field(
-            paths,
-            release_fields,
-            "usage_guide_archive_path",
-            "usage-guide",
-            localized("Usage Guide", "使用说明"),
-            localized(
-                "The operating guide for bootstrapping, daily collaboration, runtime coordination, and upgrades.",
-                "说明初始化接入、日常协作、运行态观察以及实例升级方式的系统使用文档。",
+            path: project_intro_path.clone(),
+        },
+        HomeDoc {
+            id: "usage-guide".to_string(),
+            label: lt("Usage Guide", "使用说明"),
+            description: lt(
+                "Read the operator-facing guide for bootstrap, daily collaboration, runtime observation, and upgrades.",
+                "阅读面向使用者的系统说明，了解初始化接入、日常协作、运行态观察与实例升级。",
             ),
-        ),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+            path: usage_guide_path.clone(),
+        },
+    ];
 
     let sections = vec![
-        home_section(
-            "getting-started",
-            localized("Getting Started", "开始使用"),
-            localized(
-                "The first documents a human operator or manager thread should read when entering a CodeWinter workspace.",
-                "进入 CodeWinter 工作区后，管理者或管理线程应优先阅读的系统入口文档。",
+        HomeSection {
+            id: "core-docs".to_string(),
+            title: lt("Core Documents", "系统核心文档"),
+            description: lt(
+                "Start here to understand the protocols, release model, and upgrade logic before expanding the workspace.",
+                "优先理解 CodeWinter 的核心协议、版本模型与升级逻辑，再继续扩展工作区。",
             ),
-            vec![
-                home_doc_from_path(
-                    paths,
-                    "readme",
-                    paths.codewinter_root.join("README.md"),
-                    localized("Repository Overview", "仓库总览"),
-                    localized(
-                        "The public-facing overview of CodeWinter as a portable collaboration control plane.",
-                        "面向仓库阅读者的公开总览，介绍 CodeWinter 的定位与核心能力。",
+            docs: vec![
+                HomeDoc {
+                    id: "design-principles".to_string(),
+                    label: lt("Design Principles", "设计原则"),
+                    description: lt(
+                        "The core design ideas behind progressive disclosure, runtime coordination, and Harness Engineering.",
+                        "解释渐进式披露、运行态协作层与 Harness Engineering 等系统核心思想。",
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "starter",
-                    paths.codewinter_root.join("read.md"),
-                    localized("Starter Entry", "Starter 入口"),
-                    localized(
-                        "The shared starter entry for manager and execution threads.",
-                        "管理线程与执行线程共用的统一启动入口。",
+                    path: paths.relative_display_path(
+                        &paths.codewinter_root.join("_core").join("design-principles.md"),
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "start-here",
-                    paths.control_plane_dir.join("start-here.md"),
-                    localized("Manager Navigation", "管理入口"),
-                    localized(
-                        "The manager-facing navigation page for the active control plane.",
-                        "面向管理者的控制面导航页，用于快速定位最常用入口。",
+                },
+                HomeDoc {
+                    id: "bootstrap-v1".to_string(),
+                    label: lt("Bootstrap Protocol", "Bootstrap 协议"),
+                    description: lt(
+                        "Defines how a workspace becomes a real CodeWinter instance, including greenfield startup modes.",
+                        "定义工作区如何初始化成真实实例，并包含空工作区的 greenfield 接入模式。",
                     ),
-                ),
-            ],
-        ),
-        home_section(
-            "core-docs",
-            localized("Core System Docs", "系统核心文档"),
-            localized(
-                "The platform-level documents that explain how CodeWinter is designed, versioned, and upgraded.",
-                "说明 CodeWinter 如何设计、如何版本化，以及如何升级的本体级文档。",
-            ),
-            vec![
-                home_doc_from_path(
-                    paths,
-                    "design-principles",
-                    paths.codewinter_root.join("_core").join("design-principles.md"),
-                    localized("Design Principles", "设计原则"),
-                    localized(
-                        "The foundational ideas behind progressive disclosure, runtime coordination, and harness engineering.",
-                        "解释渐进式披露、运行态协作层与 Harness Engineering 等核心设计思想。",
+                    path: paths.relative_display_path(
+                        &paths.codewinter_root.join("_core").join("bootstrap-v1.md"),
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "bootstrap-contract",
-                    paths.codewinter_root.join("_core").join("bootstrap-v1.md"),
-                    localized("Bootstrap Contract", "Bootstrap 协议"),
-                    localized(
-                        "Defines how a fresh CodeWinter folder becomes a running project instance.",
-                        "定义一个全新的 CodeWinter 文件夹如何被初始化成真实项目实例。",
-                    ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "versioning-model",
-                    paths.codewinter_root.join("_core").join("versioning-model-v1.md"),
-                    localized("Versioning Model", "版本模型"),
-                    localized(
-                        "Explains release versions, instance schema versions, and runtime coordination versions.",
+                },
+                HomeDoc {
+                    id: "versioning-model".to_string(),
+                    label: lt("Versioning Model", "版本模型"),
+                    description: lt(
+                        "Explains how release version, schema version, and runtime coordination version fit together.",
                         "说明发布版本、实例结构版本与运行协作版本之间的关系。",
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "upgrade-migration",
-                    paths.codewinter_root.join("_core").join("upgrade-migration-v1.md"),
-                    localized("Upgrade & Migration", "升级与迁移"),
-                    localized(
-                        "Defines how running instances should follow core upgrades through migration instead of replacement.",
-                        "说明运行中的项目实例应如何通过迁移，而不是覆盖文件，来跟进本体升级。",
+                    path: paths.relative_display_path(
+                        &paths.codewinter_root.join("_core").join("versioning-model-v1.md"),
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "tool-portability",
-                    paths.codewinter_root.join("_core").join("tool-portability.md"),
-                    localized("Tool Portability", "工具可迁移约定"),
-                    localized(
-                        "Describes how CodeWinter remains portable across different AI coding tools.",
-                        "说明 CodeWinter 如何在不同 AI coding 工具之间保持可迁移性。",
-                    ),
-                ),
+                },
             ],
-        ),
-        home_section(
-            "release-docs",
-            localized("Release & Governance Docs", "发布与治理文档"),
-            localized(
-                "The documents that explain the current release baseline, governance rules, and release notes model.",
-                "说明当前发布基线、发布治理规则与发布说明模型的文档集合。",
+        },
+        HomeSection {
+            id: "release-docs".to_string(),
+            title: lt("Release Documents", "发布资料"),
+            description: lt(
+                "The current public release line, its release notes, and the reader-facing entry documents.",
+                "当前公开发布线、对应说明以及对阅读者最重要的入口文档。",
             ),
-            vec![
-                home_doc_from_path(
-                    paths,
-                    "release-manifest",
-                    paths.codewinter_root.join("_core").join("release-manifest.md"),
-                    localized("Release Manifest", "发布清单"),
-                    localized(
-                        "The current release baseline for the CodeWinter core.",
-                        "记录当前 CodeWinter 本体发布基线的清单文件。",
+            docs: vec![
+                HomeDoc {
+                    id: "current-release-notes".to_string(),
+                    label: lt("Current Release Notes", "当前版本说明"),
+                    description: lt(
+                        "See what this release includes, how mature it is, and what should be validated next.",
+                        "查看当前发布包含什么、成熟度如何，以及下一步应该重点验证什么。",
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "release-governance",
-                    paths.codewinter_root.join("_core").join("release-governance-v1.md"),
-                    localized("Release Governance", "发布治理"),
-                    localized(
-                        "Defines draft, candidate, and stable release channels.",
-                        "定义 draft、candidate 与 stable 等发布通道及其治理边界。",
+                    path: release_notes_path,
+                },
+                HomeDoc {
+                    id: "project-introduction".to_string(),
+                    label: lt("Project Introduction", "项目介绍"),
+                    description: lt(
+                        "A concise overview of the system concept, its problems, and the value it aims to provide.",
+                        "一份更简洁的系统介绍，帮助理解它的定位、问题和价值。",
                     ),
-                ),
-                home_doc_from_path(
-                    paths,
-                    "release-notes-model",
-                    paths.codewinter_root.join("_core").join("release-notes-model-v1.md"),
-                    localized("Release Notes Model", "发布说明模型"),
-                    localized(
-                        "Defines how release notes should be written as migration-oriented release communications.",
-                        "定义发布说明应如何围绕迁移与升级决策来编写。",
+                    path: project_intro_path,
+                },
+                HomeDoc {
+                    id: "usage-guide".to_string(),
+                    label: lt("Usage Guide", "使用说明"),
+                    description: lt(
+                        "How to bootstrap, operate, observe, and upgrade a CodeWinter instance in practice.",
+                        "如何实际接入、使用、观察并升级一个 CodeWinter 实例。",
                     ),
-                ),
-                home_doc_from_release_field(
-                    paths,
-                    release_fields,
-                    "release_notes_path",
-                    "current-release-notes",
-                    localized("Current Release Notes", "当前版本说明"),
-                    localized(
-                        "The detailed notes for the current core release.",
-                        "当前本体发布版本的详细说明与变更摘要。",
-                    ),
-                ),
+                    path: usage_guide_path,
+                },
             ],
-        ),
-        home_section(
-            "console-docs",
-            localized("Operator Console Docs", "Operator Console 文档"),
-            localized(
-                "Docs that describe the downstream operator console and its role relative to the CodeWinter core.",
-                "说明 Operator Console 的定位，以及它与 CodeWinter 本体之间边界关系的文档。",
+        },
+    ];
+
+    HomeProjection { featured_docs, sections }
+}
+
+fn build_workbench_projection(
+    paths: &ConsolePaths,
+    quick_prompts_path: &Path,
+) -> Result<WorkbenchProjection, String> {
+    let prompts = parse_prompt_entries(paths, quick_prompts_path)?;
+    let upload_zones = vec![
+        build_upload_zone(paths, "inbox")?,
+        build_upload_zone(paths, "taskPacketDrop")?,
+    ];
+    let deliverable_groups = build_deliverable_groups(paths)?;
+
+    Ok(WorkbenchProjection {
+        prompts,
+        upload_zones,
+        deliverable_groups,
+    })
+}
+
+fn build_upload_zone(paths: &ConsolePaths, target: &str) -> Result<UploadZoneProjection, String> {
+    let (dir, kicker, title, headline, body, button, empty) = match target {
+        "taskPacketDrop" => (
+            &paths.task_packet_drop_dir,
+            lt("Task Packet Drop", "任务投递区"),
+            lt("Safe write to 04-task-packets/_incoming", "安全写入 04-task-packets/_incoming"),
+            lt(
+                "Stage raw files before they are shaped into task packets.",
+                "先暂存原始附件，再由控制面整理成正式任务包。",
             ),
-            vec![home_doc_from_path(
-                paths,
-                "operator-console",
-                paths.codewinter_root.join("_console").join("README.md"),
-                localized("Operator Console Overview", "Operator Console 说明"),
-                localized(
-                    "Explains what the operator console does, what it is allowed to write, and how it stays subordinate to the core.",
-                    "说明 Operator Console 的作用、允许的写入边界，以及它如何保持从属于本体。",
-                ),
-            )],
+            lt(
+                "Use this drop zone when materials are meant for later child-thread handoff rather than immediate manager intake.",
+                "当材料要先进入子线程任务包，而不是直接交给管理线程时，就先放在这里。",
+            ),
+            lt("Import file", "导入文件"),
+            lt(
+                "No task-packet drop files have been detected yet.",
+                "当前还没有检测到任务投递区文件。",
+            ),
+        ),
+        _ => (
+            &paths.inbox_dir,
+            lt("Inbox", "收件箱"),
+            lt("Safe write to 03-inbox", "安全写入 03-inbox"),
+            lt(
+                "Hand raw materials to the manager thread through a guarded intake zone.",
+                "把原始材料先送进一个受控入口，再由管理线程决定后续流向。",
+            ),
+            lt(
+                "Use this area for raw intake instead of writing directly into protocol files or the long-term knowledge layer.",
+                "这里用于向管理线程投递原始附件，不直接改动协议文件或长期知识层。",
+            ),
+            lt("Import file", "导入文件"),
+            lt("No inbox files have been detected yet.", "当前还没有检测到 Inbox 文件。"),
+        ),
+    };
+
+    Ok(UploadZoneProjection {
+        target: target.to_string(),
+        path: paths.relative_display_path(dir),
+        kicker,
+        title,
+        headline,
+        body,
+        button_label: button,
+        empty_state: empty,
+        items: collect_inbox_items(paths, dir)?,
+    })
+}
+
+fn build_deliverable_groups(paths: &ConsolePaths) -> Result<Vec<DeliverableGroup>, String> {
+    let files = collect_markdown_files(&paths.deliverables_dir)?;
+    let mut governance = Vec::new();
+    let mut tasks = Vec::new();
+    let mut other = Vec::new();
+
+    for path in files {
+        let relative = path
+            .strip_prefix(&paths.deliverables_dir)
+            .unwrap_or(path.as_path())
+            .to_string_lossy()
+            .replace('\\', "/");
+        let label = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("document")
+            .to_string();
+        let item = DeliverableItem {
+            label,
+            path: paths.relative_display_path(&path),
+            kind: classify_deliverable_kind(&relative).to_string(),
+        };
+
+        if relative.starts_with("governance/") {
+            governance.push(item);
+        } else if relative.starts_with("tasks/") {
+            tasks.push(item);
+        } else {
+            other.push(item);
+        }
+    }
+
+    let mut groups = Vec::new();
+    if !governance.is_empty() {
+        groups.push(DeliverableGroup {
+            id: "governance".to_string(),
+            title: lt("Governance Outputs", "治理输出"),
+            description: lt(
+                "Operator-facing governance documents, release texts, and project-level summaries.",
+                "面向使用者的治理文稿、版本说明与项目层总结材料。",
+            ),
+            items: governance,
+        });
+    }
+    if !tasks.is_empty() {
+        groups.push(DeliverableGroup {
+            id: "tasks".to_string(),
+            title: lt("Task Outputs", "任务输出"),
+            description: lt(
+                "Task-specific deliverables, thread outputs, and final artifacts grouped under work items.",
+                "按任务组织的正式输出、线程产物与最终结果。",
+            ),
+            items: tasks,
+        });
+    }
+    if !other.is_empty() {
+        groups.push(DeliverableGroup {
+            id: "other".to_string(),
+            title: lt("Other Deliverables", "其他结果"),
+            description: lt(
+                "Additional output files that do not fit the main governance or task directories.",
+                "暂未归入治理区或任务区的其他输出文件。",
+            ),
+            items: other,
+        });
+    }
+
+    Ok(groups)
+}
+
+fn build_runtime_projection(
+    paths: &ConsolePaths,
+    instance_fields: &BTreeMap<String, String>,
+    thread_board_path: &Path,
+) -> Result<RuntimeProjection, String> {
+    let thread_board_fields = parse_field_map(thread_board_path).unwrap_or_default();
+    let mut threads = collect_thread_summaries(paths)?;
+    let mut collab_requests = collect_collaboration_requests(paths)?;
+
+    threads.sort_by_key(thread_sort_key);
+    collab_requests.sort_by_key(request_sort_key);
+
+    let signals = build_runtime_signals(instance_fields, &thread_board_fields, &threads, &collab_requests);
+    let alerts = build_runtime_alerts(instance_fields, &threads, &collab_requests);
+
+    Ok(RuntimeProjection {
+        manager_lease_holder: field_or(instance_fields, "manager_lease_holder"),
+        threads,
+        collab_requests,
+        signals,
+        alerts,
+    })
+}
+
+fn build_runtime_signals(
+    instance_fields: &BTreeMap<String, String>,
+    board_fields: &BTreeMap<String, String>,
+    threads: &[ThreadSummary],
+    requests: &[CollaborationRequestSummary],
+) -> Vec<RuntimeSignalCard> {
+    vec![
+        signal_from_board_or_derived(
+            "system-health",
+            "system_health",
+            lt("System Health", "系统健康度"),
+            board_fields,
+            derive_system_health(instance_fields, threads, requests),
+        ),
+        signal_from_board_or_derived(
+            "drift-risk",
+            "drift_risk",
+            lt("Drift Risk", "偏航风险"),
+            board_fields,
+            derive_drift_risk(threads),
+        ),
+        signal_from_board_or_derived(
+            "decision-pressure",
+            "decision_pressure",
+            lt("Decision Pressure", "决策压力"),
+            board_fields,
+            derive_decision_pressure(threads, requests),
+        ),
+        signal_from_board_or_derived(
+            "collab-pressure",
+            "collab_pressure",
+            lt("Collaboration Pressure", "协作压力"),
+            board_fields,
+            derive_collab_pressure(threads, requests),
+        ),
+        signal_from_board_or_derived(
+            "closure-pressure",
+            "closure_pressure",
+            lt("Closure Pressure", "收口压力"),
+            board_fields,
+            derive_closure_pressure(threads),
         ),
     ]
-    .into_iter()
-    .filter(|section| !section.docs.is_empty())
-    .collect::<Vec<_>>();
+}
 
-    HomeProjection {
-        featured_docs,
-        sections,
+fn signal_from_board_or_derived(
+    id: &str,
+    prefix: &str,
+    title: LocalizedText,
+    board_fields: &BTreeMap<String, String>,
+    derived: (String, LocalizedText, LocalizedText),
+) -> RuntimeSignalCard {
+    let level = field_or(board_fields, &format!("{prefix}_level")).unwrap_or(derived.0);
+    let summary = field_or(board_fields, &format!("{prefix}_summary"))
+        .map(localized_passthrough)
+        .unwrap_or(derived.1);
+    let top_reason = field_or(board_fields, &format!("{prefix}_top_reason"))
+        .map(localized_passthrough)
+        .unwrap_or(derived.2);
+
+    RuntimeSignalCard {
+        id: id.to_string(),
+        title,
+        level,
+        summary,
+        top_reason,
     }
 }
-fn load_prompt_entries(paths: &ConsolePaths) -> Result<Vec<PromptEntry>, String> {
-    let quick_prompts_path = paths.manager_toolkit_dir.join("quick-prompts.md");
+
+fn derive_system_health(
+    instance_fields: &BTreeMap<String, String>,
+    threads: &[ThreadSummary],
+    requests: &[CollaborationRequestSummary],
+) -> (String, LocalizedText, LocalizedText) {
+    let template_baseline = looks_like_template_baseline(instance_fields);
+    let blocked_threads = threads
+        .iter()
+        .filter(|thread| matches_ci(thread.status.as_deref(), &["BLOCKED", "NEEDS_COLLAB"]))
+        .count();
+    let red_threads = threads
+        .iter()
+        .filter(|thread| matches_ci(thread.risk_gate.as_deref(), &["RED"]))
+        .count();
+    let fully_blocking_requests = requests
+        .iter()
+        .filter(|request| matches_ci(request.blocking_severity.as_deref(), &["FULL"]))
+        .count();
+
+    if template_baseline {
+        return (
+            "WATCH".to_string(),
+            lt(
+                "The current instance still looks like a template baseline rather than a fully claimed runtime.",
+                "当前实例仍像模板基线，而不是已经被真实项目接管的运行实例。",
+            ),
+            if threads.is_empty() {
+                lt(
+                    "No real runtime thread cards were detected yet.",
+                    "当前还没有检测到真实线程卡。",
+                )
+            } else {
+                lt(
+                    "The workspace baseline has not been fully claimed by a real manager thread yet.",
+                    "当前工作区还没有被真实管理线程完全接管。",
+                )
+            },
+        );
+    }
+
+    if red_threads > 0 || fully_blocking_requests > 0 {
+        return (
+            "PRESSURED".to_string(),
+            lt(
+                "The runtime is active, but at least one high-risk or fully blocking condition needs attention.",
+                "系统已进入运行态，但至少存在一个高风险或完整阻塞条件需要优先处理。",
+            ),
+            if fully_blocking_requests > 0 {
+                lt(
+                    "A collaboration request is marked as fully blocking the current execution path.",
+                    "存在被标记为完整阻塞主链路的协作请求。",
+                )
+            } else {
+                lt(
+                    "At least one active thread is currently running under a RED risk gate.",
+                    "至少有一个活跃线程当前处于 RED 风险门。",
+                )
+            },
+        );
+    }
+
+    if blocked_threads > 0 {
+        return (
+            "WATCH".to_string(),
+            lt(
+                "The runtime is moving, but some threads are waiting on collaboration or are currently blocked.",
+                "系统仍在推进，但已有部分线程进入阻塞或等待协作状态。",
+            ),
+            lt(
+                "One or more registered threads are currently marked as blocked or collaboration-dependent.",
+                "已有一个或多个注册线程被标记为阻塞或协作依赖。",
+            ),
+        );
+    }
+
+    (
+        "STABLE".to_string(),
+        lt(
+            "The runtime currently looks structurally stable and able to continue forward.",
+            "当前系统整体结构稳定，可以继续向前推进。",
+        ),
+        lt(
+            "No blocking signals, red risk gates, or unresolved baseline issues are dominant right now.",
+            "当前没有明显的阻塞信号、红色风险门或未解决的基线问题占据主导。",
+        ),
+    )
+}
+
+fn derive_drift_risk(threads: &[ThreadSummary]) -> (String, LocalizedText, LocalizedText) {
+    let deviation_count = threads
+        .iter()
+        .filter(|thread| is_truthy(thread.deviation_flag.as_deref()))
+        .count();
+    let low_confidence_count = threads
+        .iter()
+        .filter(|thread| matches_ci(thread.confidence.as_deref(), &["LOW"]))
+        .count();
+    let stale_active_count = threads
+        .iter()
+        .filter(|thread| is_stale_active_thread(thread))
+        .count();
+
+    if deviation_count > 0 || stale_active_count > 0 {
+        return (
+            "HIGH".to_string(),
+            lt(
+                "The runtime shows threads that may be drifting away from their intended execution path.",
+                "当前运行态显示存在可能偏离预期执行路径的线程。",
+            ),
+            if deviation_count > 0 {
+                lt(
+                    "At least one thread explicitly reported a deviation flag.",
+                    "至少有一个线程主动上报了偏航信号。",
+                )
+            } else {
+                lt(
+                    "One or more active threads have not recorded meaningful progress for too long.",
+                    "至少有一个活跃线程已经过久没有记录实质推进。",
+                )
+            },
+        );
+    }
+
+    if low_confidence_count > 0 {
+        return (
+            "MEDIUM".to_string(),
+            lt(
+                "The runtime is not visibly drifting, but some active threads are operating with low confidence.",
+                "当前没有明显偏航，但已有线程在低信心下推进。",
+            ),
+            lt(
+                "One or more active threads currently report LOW confidence.",
+                "至少有一个活跃线程当前报告为 LOW confidence。",
+            ),
+        );
+    }
+
+    (
+        "LOW".to_string(),
+        lt(
+            "No strong deviation or staleness signals are visible right now.",
+            "当前没有明显的偏航或陈旧执行信号。",
+        ),
+        lt(
+            "No registered thread has reported a deviation flag or stale active state.",
+            "当前没有线程上报偏航，也没有明显的活跃空转状态。",
+        ),
+    )
+}
+
+fn derive_decision_pressure(
+    threads: &[ThreadSummary],
+    requests: &[CollaborationRequestSummary],
+) -> (String, LocalizedText, LocalizedText) {
+    let decision_threads = threads
+        .iter()
+        .filter(|thread| !is_placeholder_value(thread.decision_needed.as_deref()))
+        .count();
+    let p0_threads = threads
+        .iter()
+        .filter(|thread| matches_ci(thread.manager_priority.as_deref(), &["P0"]))
+        .count();
+    let urgent_requests = requests
+        .iter()
+        .filter(|request| matches_ci(request.urgency.as_deref(), &["HIGH"]))
+        .count();
+
+    if decision_threads >= 3 || p0_threads > 0 {
+        return (
+            "HIGH".to_string(),
+            lt(
+                "Several decisions are currently waiting on the manager thread or an explicit human call.",
+                "当前已有多项事项在等待管理线程或人工明确决策。",
+            ),
+            if p0_threads > 0 {
+                lt(
+                    "At least one thread is marked as P0 while still carrying a pending decision.",
+                    "至少有一个线程在带有待决策事项的同时被标记为 P0。",
+                )
+            } else {
+                lt(
+                    "There are multiple unresolved decision-needed threads in the runtime.",
+                    "当前运行态里存在多条尚未解决的待决策线程。",
+                )
+            },
+        );
+    }
+
+    if decision_threads > 0 || urgent_requests > 0 {
+        return (
+            "MEDIUM".to_string(),
+            lt(
+                "There are decision points in flight, but they have not yet become a dominant bottleneck.",
+                "当前存在待决策事项，但尚未形成明显的系统性决策瓶颈。",
+            ),
+            if decision_threads > 0 {
+                lt(
+                    "At least one thread still carries a non-empty decision-needed field.",
+                    "至少有一个线程仍然保留了非空的 decision_needed 字段。",
+                )
+            } else {
+                lt(
+                    "A high-urgency collaboration request suggests pending routing or approval work.",
+                    "高优先级协作请求意味着当前仍有待路由或待确认的管理动作。",
+                )
+            },
+        );
+    }
+
+    (
+        "LOW".to_string(),
+        lt(
+            "No visible decision backlog is active in the current runtime snapshot.",
+            "当前运行态快照中没有明显的决策积压。",
+        ),
+        lt(
+            "The runtime does not show unresolved decision-needed threads or urgent routing requests.",
+            "当前没有未解决的待决策线程，也没有明显的高优先级路由请求。",
+        ),
+    )
+}
+
+fn derive_collab_pressure(
+    threads: &[ThreadSummary],
+    requests: &[CollaborationRequestSummary],
+) -> (String, LocalizedText, LocalizedText) {
+    let open_requests = requests
+        .iter()
+        .filter(|request| matches_ci(request.status.as_deref(), &["OPEN", "ROUTED", "IN_PROGRESS"]))
+        .count();
+    let full_block_requests = requests
+        .iter()
+        .filter(|request| matches_ci(request.blocking_severity.as_deref(), &["FULL"]))
+        .count();
+    let unserved_collab_threads = threads
+        .iter()
+        .filter(|thread| matches_ci(thread.status.as_deref(), &["NEEDS_COLLAB"]))
+        .filter(|thread| {
+            requests.iter().all(|request| {
+                request
+                    .target_thread_id
+                    .as_deref()
+                    .map(|target| !target.trim().eq_ignore_ascii_case(&thread.thread_id))
+                    .unwrap_or(true)
+            })
+        })
+        .count();
+
+    if full_block_requests > 0 || open_requests >= 4 {
+        return (
+            "HIGH".to_string(),
+            lt(
+                "The collaboration queue is actively pressuring system throughput.",
+                "当前协作队列已经对系统推进效率形成明显压力。",
+            ),
+            if full_block_requests > 0 {
+                lt(
+                    "At least one open collaboration request is marked as fully blocking the main path.",
+                    "至少有一条打开的协作请求被标记为完整阻塞主链路。",
+                )
+            } else {
+                lt(
+                    "There are too many simultaneously open collaboration asks for the current runtime shape.",
+                    "当前同时打开的协作请求数量已经偏多。",
+                )
+            },
+        );
+    }
+
+    if open_requests > 0 || unserved_collab_threads > 0 {
+        return (
+            "MEDIUM".to_string(),
+            lt(
+                "Collaboration is active, but the queue still looks manageable.",
+                "当前协作正在发生，但队列看起来仍可控。",
+            ),
+            if unserved_collab_threads > 0 {
+                lt(
+                    "Some threads already need collaboration, even if the request queue is still light.",
+                    "有线程已经进入 NEEDS_COLLAB，即使请求队列本身还不重。",
+                )
+            } else {
+                lt(
+                    "The request queue is active and should be kept moving to avoid future bottlenecks.",
+                    "当前请求队列已处于活跃状态，应尽快流转以避免后续阻塞。",
+                )
+            },
+        );
+    }
+
+    (
+        "LOW".to_string(),
+        lt(
+            "No active collaboration bottleneck is visible in the current request queue.",
+            "当前协作请求队列里没有明显的协作瓶颈。",
+        ),
+        lt(
+            "No open or manager-blocking collaboration requests were detected.",
+            "当前没有检测到打开中的或明显阻塞管理线程的协作请求。",
+        ),
+    )
+}
+
+fn derive_closure_pressure(threads: &[ThreadSummary]) -> (String, LocalizedText, LocalizedText) {
+    let closure_ready = threads
+        .iter()
+        .filter(|thread| is_truthy(thread.ready_for_handoff.as_deref()))
+        .count()
+        + threads
+            .iter()
+            .filter(|thread| is_truthy(thread.ready_for_archive_review.as_deref()))
+            .count()
+        + threads
+            .iter()
+            .filter(|thread| matches_ci(thread.status.as_deref(), &["HANDOFF_READY", "DONE"]))
+            .count();
+
+    if closure_ready >= 4 {
+        return (
+            "HIGH".to_string(),
+            lt(
+                "Multiple threads are ready to be handed off, integrated, or closed out.",
+                "当前有多条线程已经进入可交接、可集成或可收口状态。",
+            ),
+            lt(
+                "Several outputs are already closure-ready and should not remain in active flow for too long.",
+                "已有多项产出具备收口条件，不应长期停留在活跃流中。",
+            ),
+        );
+    }
+
+    if closure_ready > 0 {
+        return (
+            "MEDIUM".to_string(),
+            lt(
+                "There are closure-ready items waiting for the manager thread to collect them.",
+                "当前已有可收口事项，等待管理线程统一收集。",
+            ),
+            lt(
+                "At least one thread is ready for handoff, completion, or archive review.",
+                "至少有一个线程已经准备好交接、完成或归档复核。",
+            ),
+        );
+    }
+
+    (
+        "LOW".to_string(),
+        lt(
+            "Threads are still mostly in active delivery rather than closure preparation.",
+            "当前线程仍主要处于推进阶段，而不是收口准备阶段。",
+        ),
+        lt(
+            "No runtime thread has yet reached a clear handoff or archive-ready state.",
+            "当前还没有线程进入明确的交接或归档准备状态。",
+        ),
+    )
+}
+
+fn build_runtime_alerts(
+    instance_fields: &BTreeMap<String, String>,
+    threads: &[ThreadSummary],
+    requests: &[CollaborationRequestSummary],
+) -> Vec<RuntimeAlert> {
+    let mut alerts = Vec::new();
+
+    if looks_like_template_baseline(instance_fields) {
+        alerts.push(RuntimeAlert {
+            level: "warning".to_string(),
+            message: lt(
+                "Current instance is still at the BOOTSTRAPPING baseline.",
+                "当前实例仍停留在 BOOTSTRAPPING 基线，说明真实接管还没有完全完成。",
+            ),
+            source: Some("instance-manifest".to_string()),
+        });
+    }
+
+    if threads.is_empty() {
+        alerts.push(RuntimeAlert {
+            level: "info".to_string(),
+            message: lt(
+                "No real thread cards were detected yet.",
+                "当前还没有检测到真实线程卡。",
+            ),
+            source: Some("threads".to_string()),
+        });
+    }
+
+    for thread in threads.iter().filter(|thread| is_truthy(thread.deviation_flag.as_deref())).take(2) {
+        alerts.push(RuntimeAlert {
+            level: "warning".to_string(),
+            message: lt(
+                &format!("Thread {} explicitly reported deviation.", thread.thread_id),
+                &format!("线程 {} 主动上报了偏航信号。", thread.thread_id),
+            ),
+            source: Some(thread.path.clone()),
+        });
+    }
+
+    for thread in threads
+        .iter()
+        .filter(|thread| !is_placeholder_value(thread.decision_needed.as_deref()))
+        .take(2)
+    {
+        alerts.push(RuntimeAlert {
+            level: "warning".to_string(),
+            message: lt(
+                &format!("Thread {} still has a pending decision.", thread.thread_id),
+                &format!("线程 {} 当前仍有待决策事项。", thread.thread_id),
+            ),
+            source: Some(thread.path.clone()),
+        });
+    }
+
+    for request in requests
+        .iter()
+        .filter(|request| matches_ci(request.blocking_severity.as_deref(), &["FULL"]))
+        .take(2)
+    {
+        alerts.push(RuntimeAlert {
+            level: "critical".to_string(),
+            message: lt(
+                &format!(
+                    "Collaboration request {} is marked as fully blocking the current path.",
+                    request.request_id
+                ),
+                &format!("协作请求 {} 被标记为完整阻塞当前主链路。", request.request_id),
+            ),
+            source: Some(request.path.clone()),
+        });
+    }
+
+    alerts.truncate(5);
+    alerts
+}
+
+fn build_explorer_projection(paths: &ConsolePaths) -> Result<ExplorerProjection, String> {
     let mut entries = Vec::new();
-    let mut seen_paths = BTreeSet::new();
 
-    if quick_prompts_path.exists() {
-        for seed in parse_prompt_index(paths, &quick_prompts_path)? {
-            seen_paths.insert(seed.path.clone());
-            entries.push(build_prompt_entry(&seed));
+    let fixed_entries = vec![
+        ("Repository Overview", paths.codewinter_root.join("README.md"), "control-plane", "file"),
+        ("Starter Entry", paths.codewinter_root.join("read.md"), "control-plane", "file"),
+        ("Manager Brief", paths.control_plane_dir.join("manager-brief.md"), "control-plane", "file"),
+        ("Instance Manifest", paths.control_plane_dir.join("instance-manifest.md"), "runtime", "file"),
+        ("Thread Board", paths.control_plane_dir.join("thread-board.md"), "runtime", "file"),
+        ("Release Manifest", paths.codewinter_root.join("_core").join("release-manifest.md"), "release", "file"),
+    ];
+
+    for (label, path, area, kind) in fixed_entries {
+        if path.exists() {
+            entries.push(ExplorerEntry {
+                label: label.to_string(),
+                path: paths.relative_display_path(&path),
+                area: area.to_string(),
+                kind: kind.to_string(),
+            });
         }
     }
 
-    for file in collect_markdown_files(&paths.manager_toolkit_dir)? {
-        if should_skip_toolkit_prompt(&file) {
-            continue;
-        }
-
-        let relative_path = paths.relative_display_path(&file);
-        if seen_paths.contains(&relative_path) {
-            continue;
-        }
-
-        entries.push(build_prompt_entry(&PromptSeed {
-            label: first_heading(&file)?.unwrap_or_else(|| infer_prompt_label_from_path(&file)),
-            description: first_prompt_summary(&file)?,
-            path: relative_path,
-        }));
-    }
-
-    Ok(entries)
-}
-
-fn load_threads(paths: &ConsolePaths) -> Result<Vec<ThreadSummary>, String> {
-    let mut summaries = Vec::new();
-    for file in collect_markdown_files(&paths.threads_dir)? {
-        if should_skip_template_file(&file) {
-            continue;
-        }
-
-        let fields = parse_field_map(&file)?;
-        let thread_id = fields
-            .get("thread_id")
-            .cloned()
-            .or_else(|| file.file_stem().map(|value| value.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "unknown-thread".to_string());
-
-        summaries.push(ThreadSummary {
-            thread_id,
-            path: paths.relative_display_path(&file),
-            tool: fields.get("tool").cloned(),
-            role: fields.get("role").cloned(),
-            status: fields.get("status").cloned(),
-            phase: fields.get("phase").cloned(),
-            scope_claims: fields.get("scope_claims").cloned(),
-            confidence: fields.get("confidence").cloned(),
-            deviation_flag: fields.get("deviation_flag").cloned(),
-            decision_needed: fields.get("decision_needed").cloned(),
-            recommended_next_step: fields.get("recommended_next_step").cloned(),
-            last_updated: fields.get("last_updated").cloned(),
+    for path in collect_markdown_files(&paths.releases_dir)? {
+        entries.push(ExplorerEntry {
+            label: file_label(&path),
+            path: paths.relative_display_path(&path),
+            area: "release".to_string(),
+            kind: "file".to_string(),
         });
     }
 
-    summaries.sort_by(|left, right| left.thread_id.cmp(&right.thread_id));
-    Ok(summaries)
-}
-
-fn load_collaboration_requests(paths: &ConsolePaths) -> Result<Vec<CollaborationRequestSummary>, String> {
-    let mut summaries = Vec::new();
-    for file in collect_markdown_files(&paths.collab_requests_dir)? {
-        if should_skip_template_file(&file) {
-            continue;
-        }
-
-        let fields = parse_field_map(&file)?;
-        let request_id = fields
-            .get("request_id")
-            .cloned()
-            .or_else(|| file.file_stem().map(|value| value.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "unknown-request".to_string());
-
-        summaries.push(CollaborationRequestSummary {
-            request_id,
-            path: paths.relative_display_path(&file),
-            from_thread_id: fields.get("from_thread_id").cloned(),
-            status: fields.get("status").cloned(),
-            r#type: fields.get("type").cloned(),
-            urgency: fields.get("urgency").cloned(),
-            target_thread_id: fields.get("target_thread_id").cloned(),
-            target_capability: fields.get("target_capability").cloned(),
-            acceptance_signal: fields.get("acceptance_signal").cloned(),
-            updated_at: fields.get("updated_at").cloned(),
+    for path in collect_markdown_files(&paths.deliverables_dir)? {
+        entries.push(ExplorerEntry {
+            label: file_label(&path),
+            path: paths.relative_display_path(&path),
+            area: "deliverables".to_string(),
+            kind: "file".to_string(),
         });
     }
 
-    summaries.sort_by(|left, right| left.request_id.cmp(&right.request_id));
-    Ok(summaries)
+    for dir in ["10-services", "20-chains", "30-handoffs", "40-evidence", "50-decisions"] {
+        let root = paths.codewinter_root.join(dir);
+        if !root.exists() {
+            continue;
+        }
+        for path in collect_markdown_files(&root)? {
+            entries.push(ExplorerEntry {
+                label: file_label(&path),
+                path: paths.relative_display_path(&path),
+                area: "knowledge".to_string(),
+                kind: "file".to_string(),
+            });
+        }
+    }
+
+    entries.sort_by(|left, right| left.label.to_lowercase().cmp(&right.label.to_lowercase()));
+    entries.dedup_by(|left, right| left.path.eq_ignore_ascii_case(&right.path));
+
+    Ok(ExplorerProjection { entries })
 }
 
-fn load_inbox_items(paths: &ConsolePaths, root: &Path) -> Result<Vec<InboxItem>, String> {
+fn build_health_projection(
+    instance_fields: &BTreeMap<String, String>,
+    runtime: &RuntimeProjection,
+    generated_at: &str,
+) -> HealthProjection {
+    let mut warnings = Vec::new();
+
+    if looks_like_template_baseline(instance_fields) {
+        warnings.push("Current instance-manifest still looks like a template baseline.".to_string());
+    }
+
+    if runtime.threads.is_empty() {
+        warnings.push(
+            "No real thread cards were detected yet; Runtime may still be showing an empty baseline."
+                .to_string(),
+        );
+    }
+
+    HealthProjection {
+        refresh_status: if warnings.is_empty() {
+            "idle".to_string()
+        } else {
+            "degraded".to_string()
+        },
+        last_good_at: Some(generated_at.to_string()),
+        warnings,
+    }
+}
+
+fn parse_prompt_entries(paths: &ConsolePaths, quick_prompts_path: &Path) -> Result<Vec<PromptEntry>, String> {
+    let content = fs::read_to_string(quick_prompts_path)
+        .map_err(|error| format!("Failed to read quick prompts {}: {error}", quick_prompts_path.display()))?;
+    let mut prompts = Vec::new();
+    let mut current_heading: Option<String> = None;
+    let mut description_lines: Vec<String> = Vec::new();
+    let mut path: Option<String> = None;
+
+    let flush = |prompts: &mut Vec<PromptEntry>,
+                 current_heading: &mut Option<String>,
+                 description_lines: &mut Vec<String>,
+                 path: &mut Option<String>| {
+        if let (Some(heading), Some(prompt_path)) = (current_heading.take(), path.take()) {
+            let label = prompt_label(&heading);
+            let description = prompt_description(&heading, description_lines.join(" ").trim());
+            prompts.push(PromptEntry {
+                id: slugify(&heading),
+                path: resolve_display_or_raw(paths, &prompt_path),
+                label,
+                description,
+            });
+        }
+        description_lines.clear();
+    };
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if let Some(heading) = line.strip_prefix("## ") {
+            flush(&mut prompts, &mut current_heading, &mut description_lines, &mut path);
+            current_heading = Some(heading.trim().to_string());
+            continue;
+        }
+
+        if current_heading.is_none() || line.is_empty() {
+            continue;
+        }
+
+        if let Some(extracted_path) = extract_numbered_path(line) {
+            path = Some(extracted_path);
+            continue;
+        }
+
+        if !line.starts_with('#') {
+            description_lines.push(line.to_string());
+        }
+    }
+
+    flush(&mut prompts, &mut current_heading, &mut description_lines, &mut path);
+    prompts.sort_by(|left, right| left.id.cmp(&right.id));
+    prompts.dedup_by(|left, right| left.path.eq_ignore_ascii_case(&right.path));
+
+    Ok(prompts)
+}
+
+fn collect_inbox_items(paths: &ConsolePaths, dir: &Path) -> Result<Vec<InboxItem>, String> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
     let mut items = Vec::new();
-    for file in collect_all_files(root)? {
-        let metadata = fs::metadata(&file)
-            .map_err(|error| format!("Failed to read file metadata for {}: {error}", file.display()))?;
+    for entry in fs::read_dir(dir).map_err(|error| format!("Failed to read {}: {error}", dir.display()))? {
+        let entry = entry.map_err(|error| format!("Failed to read {} entry: {error}", dir.display()))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
         items.push(InboxItem {
-            name: file
-                .file_name()
-                .map(|value| value.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "unknown".to_string()),
-            path: paths.relative_display_path(&file),
-            modified_at: metadata.modified().ok().map(system_time_to_rfc3339),
+            name: file_label(&path),
+            path: paths.relative_display_path(&path),
+            modified_at: modified_at(&path),
         });
     }
 
@@ -421,811 +1148,302 @@ fn load_inbox_items(paths: &ConsolePaths, root: &Path) -> Result<Vec<InboxItem>,
     Ok(items)
 }
 
-fn load_deliverables(paths: &ConsolePaths) -> Result<Vec<DeliverableItem>, String> {
-    let mut items = Vec::new();
-    for file in collect_markdown_files(&paths.deliverables_dir)? {
-        let relative_path = paths.relative_display_path(&file);
-        let normalized = relative_path.replace('\\', "/");
-        let label = file
-            .file_name()
-            .map(|value| value.to_string_lossy().into_owned())
-            .unwrap_or_else(|| normalized.clone());
+fn collect_thread_summaries(paths: &ConsolePaths) -> Result<Vec<ThreadSummary>, String> {
+    let files = collect_markdown_files(&paths.threads_dir)?;
+    let mut threads = Vec::new();
 
-        let kind = if normalized.contains("/final/") {
-            "final"
-        } else if normalized.contains("/thread-outputs/") {
-            "thread-output"
-        } else if normalized.ends_with("/index.md") || normalized.ends_with("index.md") {
-            "index"
-        } else {
-            "other"
-        };
-
-        items.push(DeliverableItem {
-            label,
-            path: relative_path,
-            kind: kind.to_string(),
+    for path in files.into_iter().filter(|path| !is_template_or_readme(path)) {
+        let fields = parse_field_map(&path).unwrap_or_default();
+        threads.push(ThreadSummary {
+            thread_id: field_or(&fields, "thread_id").unwrap_or_else(|| file_stem(&path)),
+            path: paths.relative_display_path(&path),
+            tool: field_or(&fields, "tool"),
+            role: field_or(&fields, "role"),
+            status: field_or(&fields, "status"),
+            phase: field_or(&fields, "phase"),
+            current_task: field_or(&fields, "current_task"),
+            scope_claims: field_or(&fields, "scope_claims"),
+            risk_gate: field_or(&fields, "risk_gate"),
+            manager_priority: field_or(&fields, "manager_priority"),
+            confidence: field_or(&fields, "confidence"),
+            deviation_flag: field_or(&fields, "deviation_flag"),
+            decision_needed: field_or(&fields, "decision_needed"),
+            recommended_next_step: field_or(&fields, "recommended_next_step"),
+            last_updated: field_or(&fields, "last_updated"),
+            last_meaningful_progress_at: field_or(&fields, "last_meaningful_progress_at"),
+            ready_for_handoff: field_or(&fields, "ready_for_handoff"),
+            ready_for_archive_review: field_or(&fields, "ready_for_archive_review"),
+            manager_attention: field_or(&fields, "manager_attention"),
         });
     }
 
-    items.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(items)
+    Ok(threads)
 }
 
-fn load_explorer_entries(
-    paths: &ConsolePaths,
-    release_fields: &BTreeMap<String, String>,
-) -> Vec<ExplorerEntry> {
-    let mut entries = vec![
-        explorer_file(
-            paths,
-            "manager-brief.md",
-            paths.control_plane_dir.join("manager-brief.md"),
-            "control-plane",
-        ),
-        explorer_file(
-            paths,
-            "active-queue.md",
-            paths.control_plane_dir.join("active-queue.md"),
-            "control-plane",
-        ),
-        explorer_file(
-            paths,
-            "thread-board.md",
-            paths.control_plane_dir.join("thread-board.md"),
-            "runtime",
-        ),
-        explorer_file(
-            paths,
-            "instance-manifest.md",
-            paths.control_plane_dir.join("instance-manifest.md"),
-            "runtime",
-        ),
-        explorer_file(
-            paths,
-            "release-manifest.md",
-            paths.codewinter_root.join("_core").join("release-manifest.md"),
-            "release",
-        ),
-        explorer_dir(paths, "threads/", paths.threads_dir.clone(), "runtime"),
-        explorer_dir(
-            paths,
-            "collab-requests/",
-            paths.collab_requests_dir.clone(),
-            "runtime",
-        ),
-        explorer_dir(
-            paths,
-            "05-deliverables/",
-            paths.deliverables_dir.clone(),
-            "deliverables",
-        ),
-        explorer_dir(paths, "10-services/", paths.codewinter_root.join("10-services"), "knowledge"),
-    ];
+fn collect_collaboration_requests(paths: &ConsolePaths) -> Result<Vec<CollaborationRequestSummary>, String> {
+    let files = collect_markdown_files(&paths.collab_requests_dir)?;
+    let mut requests = Vec::new();
 
-    if let Some(release_notes_path) = release_fields.get("release_notes_path") {
-        if let Ok(candidate) = paths.resolve_read_path(release_notes_path) {
-            entries.push(explorer_file(
-                paths,
-                "current release notes",
-                candidate,
-                "release",
-            ));
-        }
-    }
-
-    entries
-}
-
-fn build_runtime_alerts(
-    threads: &[ThreadSummary],
-    collab_requests: &[CollaborationRequestSummary],
-    instance_fields: &BTreeMap<String, String>,
-) -> Vec<RuntimeAlert> {
-    let mut alerts = Vec::new();
-
-    if instance_fields
-        .get("status")
-        .map(|value| value == "BOOTSTRAPPING")
-        .unwrap_or(false)
-    {
-        alerts.push(RuntimeAlert {
-            level: "info".to_string(),
-            message: "Current instance is still at the BOOTSTRAPPING baseline.".to_string(),
-            source: Some("./CodeWinter/00-control-plane/instance-manifest.md".to_string()),
+    for path in files.into_iter().filter(|path| !is_template_or_readme(path)) {
+        let fields = parse_field_map(&path).unwrap_or_default();
+        requests.push(CollaborationRequestSummary {
+            request_id: field_or(&fields, "request_id").unwrap_or_else(|| file_stem(&path)),
+            path: paths.relative_display_path(&path),
+            from_thread_id: field_or(&fields, "from_thread_id"),
+            status: field_or(&fields, "status"),
+            r#type: field_or(&fields, "type"),
+            urgency: field_or(&fields, "urgency"),
+            blocking_severity: field_or(&fields, "blocking_severity"),
+            target_thread_id: field_or(&fields, "target_thread_id"),
+            target_capability: field_or(&fields, "target_capability"),
+            why_now: field_or(&fields, "why_now"),
+            requested_outcome: field_or(&fields, "requested_outcome"),
+            done_when: field_or(&fields, "done_when"),
+            acceptance_signal: field_or(&fields, "acceptance_signal"),
+            updated_at: field_or(&fields, "updated_at").or_else(|| modified_at(&path)),
         });
     }
 
-    for thread in threads.iter().filter(|thread| {
-        thread
-            .deviation_flag
-            .as_deref()
-            .map(|value| value.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-    }) {
-        alerts.push(RuntimeAlert {
-            level: "warning".to_string(),
-            message: format!("Thread {} explicitly reported deviation.", thread.thread_id),
-            source: Some(thread.path.clone()),
-        });
-    }
-
-    for thread in threads.iter().filter(|thread| {
-        thread
-            .decision_needed
-            .as_deref()
-            .map(|value| {
-                let normalized = value.trim();
-                !normalized.is_empty() && normalized != "—" && normalized != "None"
-            })
-            .unwrap_or(false)
-    }) {
-        alerts.push(RuntimeAlert {
-            level: "warning".to_string(),
-            message: format!("Thread {} still has a pending decision.", thread.thread_id),
-            source: Some(thread.path.clone()),
-        });
-    }
-
-    for thread in threads.iter().filter(|thread| {
-        matches!(
-            thread.status.as_deref(),
-            Some("BLOCKED") | Some("NEEDS_COLLAB") | Some("HANDOFF_READY")
-        )
-    }) {
-        alerts.push(RuntimeAlert {
-            level: "info".to_string(),
-            message: format!(
-                "Thread {} is currently in status {}.",
-                thread.thread_id,
-                thread.status.as_deref().unwrap_or("unknown")
-            ),
-            source: Some(thread.path.clone()),
-        });
-    }
-
-    for request in collab_requests.iter().filter(|request| {
-        request.urgency.as_deref() == Some("HIGH") && request.status.as_deref() != Some("FULFILLED")
-    }) {
-        alerts.push(RuntimeAlert {
-            level: "warning".to_string(),
-            message: format!(
-                "Collaboration request {} is still pending at HIGH urgency.",
-                request.request_id
-            ),
-            source: Some(request.path.clone()),
-        });
-    }
-
-    alerts
-}
-
-fn build_health_warnings(
-    instance_fields: &BTreeMap<String, String>,
-    threads: &[ThreadSummary],
-) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    if instance_fields
-        .get("instance_name")
-        .map(|value| value == "to confirm")
-        .unwrap_or(true)
-    {
-        warnings.push("Current instance-manifest still looks like a template baseline.".to_string());
-    }
-
-    if threads.is_empty() {
-        warnings.push(
-            "No real thread cards were detected yet; Runtime may still be showing an empty baseline."
-                .to_string(),
-        );
-    }
-
-    warnings
-}
-
-fn parse_prompt_index(paths: &ConsolePaths, quick_prompts_path: &Path) -> Result<Vec<PromptSeed>, String> {
-    let content = read_utf8_file(quick_prompts_path)?;
-    let mut seeds = Vec::new();
-    let mut current_label: Option<String> = None;
-    let mut current_description: Option<String> = None;
-    let mut current_path: Option<String> = None;
-
-    for raw_line in content.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if let Some(label) = line.strip_prefix("## ") {
-            flush_prompt_seed(
-                &mut seeds,
-                current_label.take(),
-                current_description.take(),
-                current_path.take(),
-            );
-            current_label = Some(label.trim().to_string());
-            continue;
-        }
-
-        if current_label.is_none() {
-            continue;
-        }
-
-        if current_description.is_none() && !line.starts_with("1. ") && !line.starts_with("2. ") {
-            current_description = Some(line.to_string());
-            continue;
-        }
-
-        if current_path.is_none() {
-            if let Some(path) = extract_markdown_path(line) {
-                current_path = Some(paths.relative_display_path(&paths.resolve_read_path(&path)?));
-            }
-        }
-    }
-
-    flush_prompt_seed(
-        &mut seeds,
-        current_label.take(),
-        current_description.take(),
-        current_path.take(),
-    );
-
-    Ok(seeds)
-}
-
-fn flush_prompt_seed(
-    seeds: &mut Vec<PromptSeed>,
-    label: Option<String>,
-    description: Option<String>,
-    path: Option<String>,
-) {
-    if let (Some(label), Some(path)) = (label, path) {
-        seeds.push(PromptSeed {
-            label,
-            description,
-            path,
-        });
-    }
-}
-
-fn extract_markdown_path(line: &str) -> Option<String> {
-    for marker in ["./CodeWinter/"] {
-        if let Some(start) = line.find(marker) {
-            let raw = &line[start..];
-            let trimmed = raw.trim().trim_matches('`');
-            return Some(trimmed.to_string());
-        }
-    }
-
-    None
-}
-
-fn build_prompt_entry(seed: &PromptSeed) -> PromptEntry {
-    let id = normalize_prompt_id(&seed.path);
-    let zh_description = seed
-        .description
-        .as_deref()
-        .map(clean_prompt_description)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| prompt_description_zh(&id).to_string());
-
-    PromptEntry {
-        id: id.clone(),
-        path: seed.path.clone(),
-        label: localized(prompt_label_en(&id, &seed.label), prompt_label_zh(&id, &seed.label)),
-        description: localized(prompt_description_en(&id), zh_description),
-    }
-}
-
-fn group_instance_fields(fields: Vec<KeyValueField>) -> Vec<InstanceSection> {
-    let basics = [
-        "instance_name",
-        "workspace_root",
-        "status",
-        "compatibility_window",
-        "manager_lease_holder",
-        "last_bootstrap_at",
-        "last_upgrade_at",
-    ];
-    let release = [
-        "release_version",
-        "release_channel",
-        "release_theme",
-        "release_codename",
-        "release_notes_path",
-    ];
-    let compatibility = [
-        "instance_schema_version",
-        "runtime_coordination_version",
-        "bootstrap_contract_version",
-        "migration_contract_version",
-        "release_governance_version",
-        "release_notes_model_version",
-    ];
-    let control_plane = [
-        "manager_brief",
-        "active_queue",
-        "thread_board",
-        "upgrade_plan",
-        "upgrade_log",
-    ];
-
-    let mut basics_fields = Vec::new();
-    let mut release_fields = Vec::new();
-    let mut compatibility_fields = Vec::new();
-    let mut control_plane_fields = Vec::new();
-
-    for field in fields {
-        if basics.contains(&field.key.as_str()) {
-            basics_fields.push(field);
-        } else if release.contains(&field.key.as_str()) {
-            release_fields.push(field);
-        } else if compatibility.contains(&field.key.as_str()) {
-            compatibility_fields.push(field);
-        } else if control_plane.contains(&field.key.as_str()) {
-            control_plane_fields.push(field);
-        } else {
-            compatibility_fields.push(field);
-        }
-    }
-
-    let mut sections = Vec::new();
-    push_section(
-        &mut sections,
-        "basics",
-        localized("Instance Basics", "实例基础"),
-        localized(
-            "Who this instance is, what state it is in, and whether it has already been claimed by a real project.",
-            "这一组字段说明当前实例是谁、处于什么状态，以及是否已经被真实项目接管。",
-        ),
-        basics_fields,
-    );
-    push_section(
-        &mut sections,
-        "release",
-        localized("Release Baseline", "发布基线"),
-        localized(
-            "Which CodeWinter core release this instance is currently aligned with.",
-            "这一组字段说明当前实例对齐的是哪一版 CodeWinter 本体发布。",
-        ),
-        release_fields,
-    );
-    push_section(
-        &mut sections,
-        "compatibility",
-        localized("Compatibility & Contracts", "兼容与协议"),
-        localized(
-            "Compatibility lines and contract versions used for migration, upgrade, and governance decisions.",
-            "这一组字段主要服务于升级、迁移和治理判断，而不是日常业务状态本身。",
-        ),
-        compatibility_fields,
-    );
-    push_section(
-        &mut sections,
-        "control-plane",
-        localized("Control Plane Links", "控制面入口"),
-        localized(
-            "Jump links to the main control-plane artifacts that the manager thread and the console use most often.",
-            "这一组路径帮助管理线程和 Console 快速定位最常用的控制面工件。",
-        ),
-        control_plane_fields,
-    );
-
-    sections
-}
-fn push_section(
-    sections: &mut Vec<InstanceSection>,
-    id: &str,
-    title: LocalizedText,
-    description: LocalizedText,
-    fields: Vec<KeyValueField>,
-) {
-    if !fields.is_empty() {
-        sections.push(InstanceSection {
-            id: id.to_string(),
-            title,
-            description,
-            fields,
-        });
-    }
-}
-
-fn build_upload_zones(
-    paths: &ConsolePaths,
-    inbox_items: Vec<InboxItem>,
-    task_packet_drop_items: Vec<InboxItem>,
-) -> Vec<UploadZoneProjection> {
-    vec![
-        UploadZoneProjection {
-            target: "inbox".to_string(),
-            path: paths.relative_display_path(&paths.inbox_dir),
-            kicker: localized("Inbox", "收件箱"),
-            title: localized("Safe write to 03-inbox", "安全写入 03-inbox"),
-            headline: localized(
-                "Raw intake for the manager thread",
-                "管理线程原始收件入口",
-            ),
-            body: localized(
-                "Use this area to hand raw files to the manager thread without mutating protocol files or the long-term knowledge layer.",
-                "这里用于向管理线程投递原始材料，不直接改动协议文件或长期知识层。",
-            ),
-            button_label: localized("Choose a file and write it to Inbox", "选择文件写入 Inbox"),
-            empty_state: localized(
-                "No inbox files have been detected yet.",
-                "当前还没有检测到 Inbox 文件。",
-            ),
-            items: inbox_items,
-        },
-        UploadZoneProjection {
-            target: "taskPacketDrop".to_string(),
-            path: paths.relative_display_path(&paths.task_packet_drop_dir),
-            kicker: localized("Task Packet Drop", "任务投递区"),
-            title: localized(
-                "Safe write to 04-task-packets/_incoming",
-                "安全写入 04-task-packets/_incoming",
-            ),
-            headline: localized(
-                "Stage raw files for child-thread delivery",
-                "为子线程任务暂存原始附件",
-            ),
-            body: localized(
-                "Use this drop zone to stage files that will later be organized into a real packet.md and task packet structure.",
-                "这里用于暂存后续要整理成 packet.md 和正式任务包结构的原始附件。",
-            ),
-            button_label: localized(
-                "Choose a file and send it to Task Packets",
-                "选择文件投递到 Task Packets",
-            ),
-            empty_state: localized(
-                "No task packet drop files have been detected yet.",
-                "当前还没有检测到任务投递文件。",
-            ),
-            items: task_packet_drop_items,
-        },
-    ]
-}
-fn group_deliverables(items: Vec<DeliverableItem>) -> Vec<DeliverableGroup> {
-    let mut groups = BTreeMap::new();
-
-    for item in items {
-        let normalized = item.path.replace('\\', "/");
-        let id = if normalized.contains("/05-deliverables/governance/") {
-            "governance"
-        } else if normalized.contains("/05-deliverables/tasks/") {
-            "tasks"
-        } else {
-            "other"
-        };
-
-        groups
-            .entry(id.to_string())
-            .or_insert_with(Vec::new)
-            .push(item);
-    }
-
-    groups
-        .into_iter()
-        .map(|(id, mut items)| {
-            items.sort_by(deliverable_item_cmp);
-            let (title, description) = match id.as_str() {
-                "governance" => (
-                    localized("Governance", "治理"),
-                    localized(
-                        "Governance, architecture, roadmap, and operating-model outputs.",
-                        "治理、架构、路线图与协作模式相关的正式输出。",
-                    ),
-                ),
-                "tasks" => (
-                    localized("Tasks", "任务"),
-                    localized(
-                        "Formal outputs for concrete project tasks.",
-                        "面向具体业务任务的正式输出。",
-                    ),
-                ),
-                _ => (
-                    localized("Other", "其他"),
-                    localized(
-                        "Outputs that do not currently fall under governance or tasks.",
-                        "当前暂未落入 governance 或 tasks 结构的正式输出。",
-                    ),
-                ),
-            };
-
-            DeliverableGroup {
-                id,
-                title,
-                description,
-                items,
-            }
-        })
-        .collect()
-}
-fn home_section(
-    id: &str,
-    title: LocalizedText,
-    description: LocalizedText,
-    docs: Vec<Option<HomeDoc>>,
-) -> HomeSection {
-    HomeSection {
-        id: id.to_string(),
-        title,
-        description,
-        docs: docs.into_iter().flatten().collect(),
-    }
-}
-
-fn home_doc_from_path(
-    paths: &ConsolePaths,
-    id: &str,
-    path: PathBuf,
-    label: LocalizedText,
-    description: LocalizedText,
-) -> Option<HomeDoc> {
-    if !path.exists() {
-        return None;
-    }
-
-    Some(HomeDoc {
-        id: id.to_string(),
-        label,
-        description,
-        path: paths.relative_display_path(&path),
-    })
-}
-
-fn home_doc_from_release_field(
-    paths: &ConsolePaths,
-    release_fields: &BTreeMap<String, String>,
-    field: &str,
-    id: &str,
-    label: LocalizedText,
-    description: LocalizedText,
-) -> Option<HomeDoc> {
-    let relative_path = release_fields.get(field)?;
-    let path = paths.resolve_read_path(relative_path).ok()?;
-    home_doc_from_path(paths, id, path, label, description)
+    Ok(requests)
 }
 
 fn collect_markdown_files(root: &Path) -> Result<Vec<PathBuf>, String> {
-    collect_paths(root, true)
-}
-
-fn collect_all_files(root: &Path) -> Result<Vec<PathBuf>, String> {
-    collect_paths(root, false)
-}
-
-fn collect_paths(root: &Path, markdown_only: bool) -> Result<Vec<PathBuf>, String> {
     if !root.exists() {
         return Ok(Vec::new());
     }
 
     let mut files = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-
-    while let Some(current) = stack.pop() {
-        let entries = fs::read_dir(&current)
-            .map_err(|error| format!("Failed to walk directory {}: {error}", current.display()))?;
-
-        for entry in entries {
-            let entry = entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-
-            if markdown_only {
-                let is_markdown = path
-                    .extension()
-                    .and_then(|value| value.to_str())
-                    .map(|value| value.eq_ignore_ascii_case("md"))
-                    .unwrap_or(false);
-                if !is_markdown {
-                    continue;
-                }
-            }
-
-            files.push(path);
-        }
-    }
-
+    collect_markdown_files_into(root, &mut files)?;
     files.sort();
     Ok(files)
 }
 
-fn should_skip_template_file(path: &Path) -> bool {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    normalized.contains("/_template/") || normalized.ends_with("/README.md")
-}
-
-fn should_skip_toolkit_prompt(path: &Path) -> bool {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    normalized.ends_with("/quick-prompts.md")
-}
-
-fn explorer_file(paths: &ConsolePaths, label: &str, path: PathBuf, area: &str) -> ExplorerEntry {
-    ExplorerEntry {
-        label: label.to_string(),
-        path: paths.relative_display_path(&path),
-        area: area.to_string(),
-        kind: "file".to_string(),
+fn collect_markdown_files_into(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(root).map_err(|error| format!("Failed to read {}: {error}", root.display()))? {
+        let entry = entry.map_err(|error| format!("Failed to read {} entry: {error}", root.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            if path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(|value| value.eq_ignore_ascii_case("_template"))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            collect_markdown_files_into(&path, files)?;
+        } else if path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.eq_ignore_ascii_case("md"))
+            .unwrap_or(false)
+        {
+            files.push(path);
+        }
     }
-}
 
-fn explorer_dir(paths: &ConsolePaths, label: &str, path: PathBuf, area: &str) -> ExplorerEntry {
-    ExplorerEntry {
-        label: label.to_string(),
-        path: paths.relative_display_path(&path),
-        area: area.to_string(),
-        kind: "directory".to_string(),
-    }
+    Ok(())
 }
 
 fn fields_to_map(fields: &[KeyValueField]) -> BTreeMap<String, String> {
     fields
         .iter()
         .map(|field| (field.key.clone(), field.value.clone()))
-        .collect::<BTreeMap<_, _>>()
+        .collect()
 }
 
-fn system_time_to_rfc3339(value: SystemTime) -> String {
-    let date_time: DateTime<Utc> = value.into();
-    date_time.to_rfc3339()
+fn field_or(fields: &BTreeMap<String, String>, key: &str) -> Option<String> {
+    fields.get(key).map(|value| value.trim().to_string())
 }
 
-fn deliverable_item_cmp(left: &DeliverableItem, right: &DeliverableItem) -> std::cmp::Ordering {
-    deliverable_kind_rank(&left.kind)
-        .cmp(&deliverable_kind_rank(&right.kind))
-        .then_with(|| left.path.cmp(&right.path))
+fn is_placeholder_value(value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return true;
+    };
+    matches!(
+        value.trim().to_lowercase().as_str(),
+        "" | "to confirm" | "not yet" | "none" | "-" | "n/a"
+    )
 }
 
-fn deliverable_kind_rank(kind: &str) -> u8 {
-    match kind {
-        "final" => 0,
-        "index" => 1,
-        "thread-output" => 2,
-        _ => 3,
+fn looks_like_template_baseline(fields: &BTreeMap<String, String>) -> bool {
+    matches_ci(field_or(fields, "status").as_deref(), &["BOOTSTRAPPING"])
+        || is_placeholder_value(field_or(fields, "instance_name").as_deref())
+        || is_placeholder_value(field_or(fields, "workspace_root").as_deref())
+        || is_placeholder_value(field_or(fields, "manager_lease_holder").as_deref())
+}
+
+fn modified_at(path: &Path) -> Option<String> {
+    let metadata = fs::metadata(path).ok()?;
+    let modified = metadata.modified().ok()?;
+    Some(chrono::DateTime::<Utc>::from(modified).to_rfc3339())
+}
+
+fn is_template_or_readme(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("README.md"))
+        .unwrap_or(false)
+        || path.components().any(|component| component.as_os_str() == "_template")
+}
+
+fn file_label(path: &Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("document")
+        .to_string()
+}
+
+fn file_stem(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("item")
+        .to_string()
+}
+
+fn resolve_display_or_raw(paths: &ConsolePaths, raw: &str) -> String {
+    match paths.resolve_read_path(raw) {
+        Ok(path) => paths.relative_display_path(&path),
+        Err(_) => raw.to_string(),
     }
 }
 
-fn localized(en: impl Into<String>, zh: impl Into<String>) -> LocalizedText {
+fn classify_deliverable_kind(relative: &str) -> &'static str {
+    let lower = relative.to_lowercase();
+    if lower.ends_with("/index.md") || lower == "index.md" {
+        "index"
+    } else if lower.contains("/final/") {
+        "final"
+    } else if lower.contains("/thread-outputs/") {
+        "thread-output"
+    } else {
+        "other"
+    }
+}
+
+fn extract_numbered_path(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let (_, right) = trimmed.split_once(". ")?;
+    if right.starts_with("./CodeWinter/") || right.starts_with("CodeWinter/") {
+        Some(right.trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn prompt_label(heading: &str) -> LocalizedText {
+    match heading.trim() {
+        "Bootstrap" => lt("Bootstrap", "初始化接管"),
+        "Bootstrap Greenfield" => lt("Bootstrap Greenfield", "空工作区接管"),
+        "Start" => lt("Start", "开始接手"),
+        "Resume" => lt("Resume", "继续推进"),
+        "Collaborate" => lt("Collaborate", "交接协作"),
+        "Runtime Update" => lt("Runtime Update", "运行态更新"),
+        "Collaboration Request" => lt("Collaboration Request", "协作请求"),
+        "Archive Direct" => lt("Archive Direct", "直接归档"),
+        "Archive Bundle" => lt("Archive Bundle", "归档打包"),
+        other => lt(other, other),
+    }
+}
+
+fn prompt_description(heading: &str, zh_fallback: &str) -> LocalizedText {
+    let en = match heading.trim() {
+        "Bootstrap" => "Set up a real CodeWinter instance and assign the first manager lease.",
+        "Bootstrap Greenfield" => "Shape a blank workspace from goals and constraints before code or scaffolding exists.",
+        "Start" => "Hand a first bounded task to an execution thread.",
+        "Resume" => "Bring an existing thread back into the next stage of work.",
+        "Collaborate" => "Hand context and action cleanly from one thread to the next.",
+        "Runtime Update" => "Record meaningful runtime state changes without writing a running diary.",
+        "Collaboration Request" => "Create a structured collaboration request instead of a vague ask for help.",
+        "Archive Direct" => "Archive a confirmed, low-risk result directly.",
+        "Archive Bundle" => "Bundle cross-thread or high-value work for archive review.",
+        _ => zh_fallback,
+    };
+
+    lt(en, if zh_fallback.is_empty() { heading } else { zh_fallback })
+}
+
+fn lt(en: impl Into<String>, zh: impl Into<String>) -> LocalizedText {
     LocalizedText {
         en: en.into(),
         zh: zh.into(),
     }
 }
 
-fn normalize_prompt_id(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
-    if normalized.ends_with("/bootstrap-manager.md") {
-        "bootstrap".to_string()
-    } else if normalized.ends_with("/thread-start.md") {
-        "start".to_string()
-    } else if normalized.ends_with("/thread-resume.md") {
-        "resume".to_string()
-    } else if normalized.ends_with("/thread-handoff.md") {
-        "handoff".to_string()
-    } else if normalized.ends_with("/thread-runtime-update.md") {
-        "runtime-update".to_string()
-    } else if normalized.ends_with("/collab-request.md") {
-        "collab-request".to_string()
-    } else if normalized.ends_with("/archive-direct.md") {
-        "archive-direct".to_string()
-    } else if normalized.ends_with("/archive-bundle.md") {
-        "archive-bundle".to_string()
-    } else {
-        Path::new(&normalized)
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("prompt")
-            .to_string()
-    }
+fn localized_passthrough(value: String) -> LocalizedText {
+    lt(value.clone(), value)
 }
 
-fn prompt_label_zh(id: &str, fallback: &str) -> String {
-    match id {
-        "bootstrap" => "初始化接管".to_string(),
-        "start" => "开始接手".to_string(),
-        "resume" => "继续执行".to_string(),
-        "handoff" => "交接接力".to_string(),
-        "runtime-update" => "运行态更新".to_string(),
-        "collab-request" => "协作请求".to_string(),
-        "archive-direct" => "直接归档".to_string(),
-        "archive-bundle" => "归档包".to_string(),
-        _ => fallback.to_string(),
-    }
-}
-fn prompt_label_en(id: &str, fallback: &str) -> String {
-    match id {
-        "bootstrap" => "Bootstrap".to_string(),
-        "start" => "Start".to_string(),
-        "resume" => "Resume".to_string(),
-        "handoff" => "Handoff".to_string(),
-        "runtime-update" => "Runtime Update".to_string(),
-        "collab-request" => "Collaboration Request".to_string(),
-        "archive-direct" => "Archive Direct".to_string(),
-        "archive-bundle" => "Archive Bundle".to_string(),
-        _ => fallback.to_string(),
-    }
-}
-
-fn prompt_description_en(id: &str) -> String {
-    match id {
-        "bootstrap" => "Set up a new CodeWinter instance and hand the first lease to the manager thread.",
-        "start" => "Use when an execution thread is taking ownership of a task for the first time.",
-        "resume" => "Use when an existing execution thread is reactivated for a new phase or a new issue.",
-        "handoff" => "Transfer stable context, action boundaries, and next-step guidance to another thread.",
-        "runtime-update" => "Report runtime status, blockage, deviation, or completion without writing a full handoff.",
-        "collab-request" => "Request collaboration from another thread with a clearly scoped ask and acceptance signal.",
-        "archive-direct" => "Archive a low-risk, narrow-scope task directly when the result is confirmed.",
-        "archive-bundle" => "Prepare a higher-value or multi-thread archive bundle for confirmation before writing back.",
-        _ => "Open this prompt template from the manager toolkit.",
-    }
-    .to_string()
-}
-
-fn prompt_description_zh(id: &str) -> &'static str {
-    match id {
-        "bootstrap" => "用于新项目第一次接入 CodeWinter，由管理线程完成初始化接管。",
-        "start" => "用于执行线程第一次接手某个边界清晰的任务。",
-        "resume" => "用于旧执行线程在新阶段或新问题中被重新唤起。",
-        "handoff" => "用于把稳定上下文、动作边界和下一步建议交给另一个线程。",
-        "runtime-update" => "用于登记运行态、上报阻塞、偏航、待决策事项或完成状态。",
-        "collab-request" => "用于发起跨线程协作请求，并把当前为什么需要协作说明清楚。",
-        "archive-direct" => "用于低风险、小范围任务的直接归档。",
-        "archive-bundle" => "用于跨线程或高价值任务的归档包准备与确认。",
-        _ => "用于从管理工具箱中打开这份提示词模板。",
-    }
-}
-fn clean_prompt_description(value: &str) -> String {
+fn slugify(value: &str) -> String {
     value
         .trim()
-        .trim_start_matches("适用场景：")
-        .trim_start_matches("适用场景:")
-        .trim()
-        .to_string()
-}
-fn first_heading(path: &Path) -> Result<Option<String>, String> {
-    let content = read_utf8_file(path)?;
-    Ok(content
-        .lines()
-        .map(str::trim)
-        .find_map(|line| line.strip_prefix("# ").map(|value| value.trim().to_string())))
+        .to_lowercase()
+        .replace('&', "and")
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
-fn first_prompt_summary(path: &Path) -> Result<Option<String>, String> {
-    let content = read_utf8_file(path)?;
-    let mut inside_code_block = false;
+fn matches_ci(value: Option<&str>, options: &[&str]) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    options.iter().any(|option| value.trim().eq_ignore_ascii_case(option))
+}
 
-    for raw_line in content.lines() {
-        let line = raw_line.trim();
+fn is_truthy(value: Option<&str>) -> bool {
+    matches_ci(value, &["true", "yes", "1"])
+}
 
-        if line.starts_with("```") {
-            inside_code_block = !inside_code_block;
-            continue;
-        }
+fn is_stale_active_thread(thread: &ThreadSummary) -> bool {
+    matches_ci(thread.status.as_deref(), &["ACTIVE"])
+        && is_placeholder_value(thread.last_meaningful_progress_at.as_deref())
+}
 
-        if inside_code_block || line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        return Ok(Some(line.to_string()));
+fn priority_rank(value: Option<&str>) -> i32 {
+    match value.map(|item| item.trim().to_uppercase()).as_deref() {
+        Some("P0") => 0,
+        Some("P1") => 1,
+        Some("P2") => 2,
+        Some("P3") => 3,
+        _ => 9,
     }
-
-    Ok(None)
 }
 
-fn infer_prompt_label_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .map(|value| value.replace('-', " "))
-        .unwrap_or_else(|| "Prompt".to_string())
+fn thread_sort_key(thread: &ThreadSummary) -> (i32, i32, i32, i32, String) {
+    (
+        priority_rank(thread.manager_priority.as_deref()),
+        if !is_placeholder_value(thread.decision_needed.as_deref()) { 0 } else { 1 },
+        if is_truthy(thread.deviation_flag.as_deref()) { 0 } else { 1 },
+        if matches_ci(thread.risk_gate.as_deref(), &["RED"]) { 0 } else { 1 },
+        thread.thread_id.to_lowercase(),
+    )
 }
 
-#[derive(Debug, Clone)]
-struct PromptSeed {
-    label: String,
-    description: Option<String>,
-    path: String,
+fn request_sort_key(request: &CollaborationRequestSummary) -> (i32, i32, String) {
+    let blocking = match request
+        .blocking_severity
+        .as_deref()
+        .map(|value| value.trim().to_uppercase())
+        .as_deref()
+    {
+        Some("FULL") => 0,
+        Some("PARTIAL") => 1,
+        _ => 2,
+    };
+    let urgency = match request
+        .urgency
+        .as_deref()
+        .map(|value| value.trim().to_uppercase())
+        .as_deref()
+    {
+        Some("HIGH") => 0,
+        Some("MEDIUM") => 1,
+        _ => 2,
+    };
+    (blocking, urgency, request.request_id.to_lowercase())
 }

@@ -1,115 +1,134 @@
 # AI Collaboration Protocol 协作协议
 
 本文定义使用 `CodeWinter` 的长期协作规则。
-
-它不仅约束线程，还通过默认路径、控制门和反馈信号引导线程稳定推进。
+它不仅约束线程，还通过默认执行回路、控制门和反馈信号，引导线程稳定推进。
 
 ## 1. 线程启动路径
 ### 新线程
-1. 先读 `./CodeWinter/read.md`。
-2. 再读 `./CodeWinter/00-control-plane/manager-brief.md`。
-3. 再读 `./CodeWinter/00-control-plane/instance-manifest.md`。
-4. 再读本文。
-5. 如果任务涉及线程协作、阻塞、接力或运行态判断，再读 `./CodeWinter/01-thread-rules/thread-coordination-layer.md` 和 `thread-board.md`。
-6. 如果有任务包，先读任务包和必读附件。
-7. 如果已知目标服务或应用，再读对应 manifest。
-8. 如果已知目标链路，再读对应 chain card。
-9. 需要时再读近期 log、evidence 和 decisions。
+1. 先读 `./CodeWinter/read.md`
+2. 再读 `./CodeWinter/00-control-plane/manager-brief.md`
+3. 再读 `./CodeWinter/00-control-plane/instance-manifest.md`
+4. 再读本文
+5. 如果当前任务涉及运行态协作、阻塞、接力或协作请求，再读：
+   - `./CodeWinter/01-thread-rules/thread-coordination-layer.md`
+   - `./CodeWinter/00-control-plane/thread-board.md`
+6. 如果有任务包，再读任务包和必读附件
+7. 如果已知目标服务、应用或链路，再读对应资料
 
 ### 恢复线程
-1. 重新读 `./CodeWinter/read.md`。
-2. 重新读 `./CodeWinter/00-control-plane/manager-brief.md`。
-3. 重新读 `./CodeWinter/00-control-plane/instance-manifest.md`。
-4. 如果当前任务涉及协作状态变化，回看线程卡、协作请求和 `thread-board.md`。
-5. 如果本次任务有任务包，重新读任务包。
-6. 重新读当前任务命中的服务、应用或链路资料。
+1. 重新读 `./CodeWinter/read.md`
+2. 重新读 `./CodeWinter/00-control-plane/manager-brief.md`
+3. 重新读 `./CodeWinter/00-control-plane/instance-manifest.md`
+4. 回看自己的线程卡、相关协作请求和 `thread-board.md`
+5. 如果本次任务有任务包，再重新读任务包
 
 ## 2. 默认执行回路
 执行线程默认按以下顺序推进：
-1. 理解任务目标。
-2. 明确当前边界，不擅自扩张。
-3. 找最可能的入口和旧链路。
-4. 收集约束、状态口径、幂等、日志、回写和副作用。
-5. 用 `Green / Yellow / Red` 控制门判断当前推进方式。
+1. 理解任务目标
+2. 明确边界，不擅自扩张
+3. 找最可能的入口和旧链路
+4. 收集约束、状态口径、幂等、日志、回写和副作用
+5. 评估当前 `risk_gate`
 6. 选择下一步：
    - 直接实现
    - 先分析
-   - 先请求协作
-   - 先停下确认
-7. 完成后验证。
-8. 最后输出 handoff、正式输出草稿、归档包或完成上报。
+   - 请求协作
+   - 停下确认
+7. 完成后验证
+8. 最后输出 handoff、正式输出草稿、归档包或完成状态
 
-## 3. 基本执行原则
-1. 先理解现有实现，再决定怎么改。
-2. 优先复用稳定链路，而不是随手新造一套。
-3. 不确定的信息要明确标记为 `to confirm`。
-4. 需要区分是本次改动引入的问题，还是工作区原有问题。
-5. 管理角色可以在线程之间转移，连续性由控制面保证。
-6. 原始任务输入默认不等于长期知识。
-7. 如果需要其他线程接力，先产出标准 handoff。
-8. 线程状态变化应优先写入运行态协作层，而不是写成过程流水。
-9. 线程默认只更新自己的线程卡和自己发起的协作请求，避免共享写冲突。
-
-## 4. 风险控制门
-### Green
+## 3. 风险控制门
+### GREEN
 适用：
-1. 单服务、单模块、小范围任务。
-2. 已能看到稳定入口和旧链路。
-3. 风险主要来自实现细节，不来自结构边界。
+1. 单模块、小范围、边界清晰的任务
+2. 已能看到稳定入口和旧链路
 
 默认动作：
-1. 先做短分析。
-2. 再进入实现。
-3. 完成后验证并更新运行态。
+1. 先做短分析
+2. 再进入实现
+3. 完成后验证并更新线程卡
 
-### Yellow
+### YELLOW
 适用：
-1. 跨模块或跨层改动。
-2. 前后端联动。
-3. 重要配置、语义或协作边界调整。
-4. 当前仍存在明显未知项。
+1. 跨模块、跨层或联动调整
+2. 当前仍存在明显未知项
 
 默认动作：
-1. 先分析并写清约束。
-2. 明确当前缺什么输入、协作或确认。
-3. 大规模实现前，优先补齐协作或确认动作。
+1. 先分析并写清约束
+2. 优先补协作或补确认
+3. 再决定是否进入实现
 
-### Red
+### RED
 适用：
-1. 表结构变化。
-2. 外部契约变化。
-3. 权限或安全模型变化。
-4. 跨服务行为口径变化。
-5. 历史高风险关键链路。
+1. 表结构、外部契约、权限模型、安全口径等高风险变化
+2. 可能改变关键行为边界的任务
 
 默认动作：
-1. 暂停大规模实现。
-2. 先输出分析、风险和建议动作。
-3. 显式请求管理线程介入或人工确认。
+1. 暂停大规模实现
+2. 先输出分析、风险与建议动作
+3. 请求管理线程或人工明确确认
 
-## 5. 任务包规则
-1. `03-inbox` 是管理者给管理线程的原始输入层。
-2. `04-task-packets` 是给执行线程的任务输入层。
-3. `packet.md` 是任务包入口。
-4. 原始附件只有在提炼和验证后，才可以成为长期 evidence。
-5. 任务包不仅给背景，还应尽量引导线程第一步先做什么。
+### 运行态落盘要求
+1. 每个活跃线程应把当前 `risk_gate` 写入线程卡。
+2. 管理线程在查看运行态时，应把 `risk_gate` 作为优先判断信号，而不是只看 `status`。
 
-## 6. 正式输出规则
-1. `05-deliverables` 用于存放面向人的正式输出。
-2. 它不是执行线程默认知识层。
-3. 同一主题或任务应尽量只有一个稳定主目录。
-4. `thread-outputs/` 用于线程草稿。
-5. `final/` 用于当前有效正式版本。
+## 4. 线程卡要求
+线程卡不只是身份记录，也用于表达当前判断质量和编排优先级。
 
-## 7. 线程协作运行层
-1. 线程运行态信息放在 `00-control-plane`。
-2. 线程状态卡放在 `threads/`。
-3. 协作请求卡放在 `collab-requests/`。
-4. 全局总览由管理线程维护在 `thread-board.md`。
-5. 运行态协作信息不等于长期知识层。
-6. 运行态工件除了记录状态，还应用来暴露信心、偏航和决策需求。
+每张线程卡至少应让管理线程看见：
+1. 当前在做什么：`current_task`
+2. 当前边界是什么：`scope_claims`
+3. 当前风险门是什么：`risk_gate`
+4. 当前是否真的在推进：`last_meaningful_progress_at`
+5. 当前管理优先级是什么：`manager_priority`
+6. 当前判断是否可靠：`confidence`
+7. 当前是否可能偏航：`deviation_flag`
+8. 当前是否需要决策：`decision_needed`
+9. 当前建议下一步：`recommended_next_step`
 
-## 8. 反馈信号
+说明：
+1. `last_updated` 不等于“最近有实质推进”。
+2. `last_meaningful_progress_at` 用来帮助判断空转、老化和偏航风险。
+3. `manager_priority` 是运行态编排字段，不是长期知识。
+
+## 5. 协作请求要求
+协作请求不是聊天消息，也不是普通提醒。
+它本质上是线程之间的结构化协作委托单。
+
+每张协作请求卡至少应让管理线程和目标线程看见：
+1. 谁发起：`from_thread_id`
+2. 想要什么协作：`type`
+3. 为什么现在需要：`why_now`
+4. 为什么当前线程不能独立完成：`why_current_thread_cannot_finish_alone`
+5. 完成标准是什么：`done_when`
+6. 当前紧急程度：`urgency`
+7. 当前阻塞严重度：`blocking_severity`
+
+说明：
+1. `urgency` 表达“有多急”。
+2. `blocking_severity` 表达“它对当前主链路阻塞得有多重”。
+3. 如果请求已经卡住主推进，应优先把 `blocking_severity` 写实，而不是只把 `urgency` 写高。
+
+## 6. Manager Signal Panel
+管理线程应在 `thread-board.md` 中维护结构化的 Manager Signal Panel。
+
+固定 5 个维度：
+1. `system_health`
+2. `drift_risk`
+3. `decision_pressure`
+4. `collab_pressure`
+5. `closure_pressure`
+
+每个维度都应写：
+1. `level`
+2. `summary`
+3. `top_reason`
+
+说明：
+1. 这里是管理线程视角下的系统判断，不是伪精度监控面板。
+2. Runtime 页应优先展示这些判断，而不是先展示漂亮但失真的计数。
+
+## 7. 反馈信号
 线程在运行态工件中应尽量显式表达：
 1. `phase`
 2. `confidence`
@@ -118,35 +137,33 @@
 5. `recommended_next_step`
 
 这样做的目的不是增加流水账，而是让管理线程看见：
-1. 当前线程在哪个阶段。
-2. 当前判断是否可靠。
-3. 当前是否可能偏航。
-4. 是否需要管理介入或人工确认。
+1. 当前线程在哪个阶段
+2. 当前判断是否可靠
+3. 当前是否可能偏航
+4. 是否需要管理介入或人工确认
 
-## 9. 归档模型
-先分类：
-1. `stable`
-2. `recent`
-3. `evidence`
-4. `decision`
-5. `handoff`
-6. `discard`
+## 8. 任务包规则
+1. `03-inbox` 是管理者给管理线程的原始输入层
+2. `04-task-packets` 是给执行线程的任务输入层
+3. `packet.md` 是任务包入口
+4. 原始附件只有在提炼和验证后，才可以成为长期 evidence
+5. 任务包不仅给背景，还应尽量引导线程第一步先做什么
 
-再决定写入：
-1. `stable`
-   - `read.md`、控制面、service manifests、chain cards
-2. `recent`
-   - service logs
-3. `evidence`
-   - `40-evidence`
-4. `decision`
-   - `50-decisions`
-5. `handoff`
-   - `30-handoffs`
-6. `discard`
-   - 不归档
+## 9. 正式输出规则
+1. `05-deliverables` 用于存放面向人的正式输出
+2. 它不是执行线程默认知识层
+3. 同一主题或任务应尽量只有一个稳定主目录
+4. `thread-outputs/` 用于线程草稿
+5. `final/` 用于当前有效正式版本
 
-## 10. 归档标准
+## 10. 运行态协作层
+1. 线程运行态信息放在 `00-control-plane`
+2. 线程状态卡放在 `threads/`
+3. 协作请求卡放在 `collab-requests/`
+4. 全局总览由管理线程维护在 `thread-board.md`
+5. 运行态协作信息不等于长期知识层
+
+## 11. 归档标准
 只有同时满足以下条件的信息，才进入长期层：
 1. 已采纳
 2. 已证实

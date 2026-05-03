@@ -92,8 +92,13 @@ fn parse_key_value_line(raw_line: &str) -> Option<(String, String)> {
     }
 
     let rest = line[second_tick + 1..].trim();
-    let separator = rest.find(':').or_else(|| rest.find('：'))?;
-    let after_separator = rest[separator + 1..].trim();
+    let (separator_index, separator_width) = rest
+        .char_indices()
+        .find_map(|(index, character)| match character {
+            ':' | '：' => Some((index, character.len_utf8())),
+            _ => None,
+        })?;
+    let after_separator = rest[separator_index + separator_width..].trim();
 
     let value = if let Some(stripped) = after_separator.strip_prefix('`') {
         stripped

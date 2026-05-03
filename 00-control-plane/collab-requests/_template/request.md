@@ -6,6 +6,7 @@
 - `status`:
 - `type`:
 - `urgency`:
+- `blocking_severity`:
 - `opened_at`:
 - `updated_at`:
 
@@ -30,6 +31,15 @@
 2. `MEDIUM`
 3. `HIGH`
 
+推荐 `blocking_severity`：
+1. `NONE`
+2. `PARTIAL`
+3. `FULL`
+
+说明：
+1. `urgency` 表达“它有多急”。
+2. `blocking_severity` 表达“它对当前主链路阻塞得有多严重”，不要把两者混为一谈。
+
 ## 2. 目标协作对象
 - `target_thread_id`:
 - `target_capability`:
@@ -37,7 +47,7 @@
 - `recommended_receiver_profile`:
 
 说明：
-1. 如果没有明确目标线程，也至少写清希望命中的能力
+1. 如果没有明确目标线程，也至少写清希望命中的能力。
 
 ## 3. 背景与当前状态
 - `background`:

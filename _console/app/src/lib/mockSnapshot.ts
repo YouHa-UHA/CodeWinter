@@ -17,7 +17,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         path: './CodeWinter/_core/releases/v0.1.1.project-introduction.md',
         label: { en: 'Project Introduction', zh: '项目介绍' },
         description: {
-          en: 'An overview of what CodeWinter is, why it exists, and what capabilities it provides.',
+          en: 'A concise overview of what CodeWinter is, why it exists, and what capabilities it provides.',
           zh: '帮助你快速理解 CodeWinter 是什么、为什么存在，以及它提供了哪些核心能力。',
         },
       },
@@ -27,7 +27,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         label: { en: 'Usage Guide', zh: '使用说明' },
         description: {
           en: 'The operating guide for bootstrapping, daily collaboration, runtime coordination, and upgrades.',
-          zh: '说明如何初始化接入、日常协作、运行态观察以及实例升级。',
+          zh: '说明初始化接入、日常协作、运行态观察以及实例升级方式的系统使用文档。',
         },
       },
     ],
@@ -37,7 +37,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         title: { en: 'Getting Started', zh: '开始使用' },
         description: {
           en: 'The first documents a human operator or manager thread should read when entering a CodeWinter workspace.',
-          zh: '进入 CodeWinter 工作区后，管理者或管理线程优先需要阅读的入口文档。',
+          zh: '进入 CodeWinter 工作区后，管理者或管理线程应优先阅读的系统入口文档。',
         },
         docs: [
           {
@@ -55,7 +55,7 @@ export const mockSnapshot: ConsoleSnapshot = {
             label: { en: 'Starter Entry', zh: 'Starter 入口' },
             description: {
               en: 'The shared starter entry for manager and execution threads.',
-              zh: '管理线程和执行线程共享的统一启动入口。',
+              zh: '管理线程与执行线程共用的统一启动入口。',
             },
           },
         ],
@@ -137,7 +137,7 @@ export const mockSnapshot: ConsoleSnapshot = {
         headline: { en: 'Raw intake for the manager thread', zh: '管理线程原始收件入口' },
         body: {
           en: 'Use this area to hand raw files to the manager thread.',
-          zh: '这里用于向管理线程投递原始材料，不直接改动协议或长期知识层。',
+          zh: '这里用于向管理线程投递原始材料，不直接改动协议文件或长期知识层。',
         },
         buttonLabel: { en: 'Choose a file and write it to Inbox', zh: '选择文件写入 Inbox' },
         emptyState: { en: 'No inbox files have been detected yet.', zh: '当前还没有检测到 Inbox 文件。' },
@@ -154,10 +154,7 @@ export const mockSnapshot: ConsoleSnapshot = {
           zh: '这里用于暂存后续要整理成正式任务包的原始附件。',
         },
         buttonLabel: { en: 'Choose a file and send it to Task Packets', zh: '选择文件投递到 Task Packets' },
-        emptyState: {
-          en: 'No task packet drop files have been detected yet.',
-          zh: '当前还没有检测到任务投递文件。',
-        },
+        emptyState: { en: 'No task packet drop files have been detected yet.', zh: '当前还没有检测到任务投递文件。' },
         items: [],
       },
     ],
@@ -167,11 +164,80 @@ export const mockSnapshot: ConsoleSnapshot = {
     managerLeaseHolder: 'to confirm',
     threads: [],
     collabRequests: [],
+    signals: [
+      {
+        id: 'system-health',
+        title: { en: 'System Health', zh: '系统健康度' },
+        level: 'WATCH',
+        summary: {
+          en: 'The current workspace still looks like a template baseline rather than a fully running instance.',
+          zh: '当前工作区仍像模板基线，而不是已经进入真实运行态的实例。',
+        },
+        topReason: {
+          en: 'No real runtime thread cards have been detected yet.',
+          zh: '当前还没有检测到真实线程卡。',
+        },
+      },
+      {
+        id: 'drift-risk',
+        title: { en: 'Drift Risk', zh: '偏航风险' },
+        level: 'LOW',
+        summary: {
+          en: 'No active thread drift is visible in the mock snapshot.',
+          zh: '当前模拟快照中没有看到活动线程偏航信号。',
+        },
+        topReason: {
+          en: 'The mock snapshot contains no real execution threads.',
+          zh: '当前模拟快照中没有真实执行线程。',
+        },
+      },
+      {
+        id: 'decision-pressure',
+        title: { en: 'Decision Pressure', zh: '决策压力' },
+        level: 'LOW',
+        summary: {
+          en: 'No active management decision backlog is visible.',
+          zh: '当前没有明显的管理决策积压。',
+        },
+        topReason: {
+          en: 'The mock snapshot contains no unresolved thread decisions.',
+          zh: '当前模拟快照中没有未决线程判断事项。',
+        },
+      },
+      {
+        id: 'collab-pressure',
+        title: { en: 'Collaboration Pressure', zh: '协作压力' },
+        level: 'LOW',
+        summary: {
+          en: 'No collaboration queue is currently active.',
+          zh: '当前没有协作队列积压。',
+        },
+        topReason: {
+          en: 'The mock snapshot contains no open collaboration requests.',
+          zh: '当前模拟快照中没有打开的协作请求。',
+        },
+      },
+      {
+        id: 'closure-pressure',
+        title: { en: 'Closure Pressure', zh: '收口压力' },
+        level: 'LOW',
+        summary: {
+          en: 'No handoff or archive queue is currently waiting.',
+          zh: '当前没有明显的交接或归档积压。',
+        },
+        topReason: {
+          en: 'No runtime threads have reached a closure-ready state yet.',
+          zh: '当前还没有线程进入明显的收口准备状态。',
+        },
+      },
+    ],
     alerts: [
       {
         level: 'info',
-        message:
-          'The console is running in browser fallback mode, so the snapshot shown here is mock data.',
+        message: {
+          en: 'The console is running in browser fallback mode, so the snapshot shown here is mock data.',
+          zh: '当前处于浏览器回退模式，因此这里展示的是模拟快照数据。',
+        },
       },
     ],
   },

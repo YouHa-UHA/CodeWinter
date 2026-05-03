@@ -64,12 +64,19 @@ export interface ThreadSummary {
   role?: string
   status?: string
   phase?: string
+  currentTask?: string
   scopeClaims?: string
+  riskGate?: string
+  managerPriority?: string
   confidence?: string
   deviationFlag?: string
   decisionNeeded?: string
   recommendedNextStep?: string
   lastUpdated?: string
+  lastMeaningfulProgressAt?: string
+  readyForHandoff?: string
+  readyForArchiveReview?: string
+  managerAttention?: string
 }
 
 export interface CollaborationRequestSummary {
@@ -79,15 +86,27 @@ export interface CollaborationRequestSummary {
   status?: string
   type?: string
   urgency?: string
+  blockingSeverity?: string
   targetThreadId?: string
   targetCapability?: string
+  whyNow?: string
+  requestedOutcome?: string
+  doneWhen?: string
   acceptanceSignal?: string
   updatedAt?: string
 }
 
+export interface RuntimeSignalCard {
+  id: string
+  title: LocalizedText
+  level: string
+  summary: LocalizedText
+  topReason: LocalizedText
+}
+
 export interface RuntimeAlert {
   level: AlertLevel
-  message: string
+  message: LocalizedText
   source?: string
 }
 
@@ -161,6 +180,7 @@ export interface ConsoleSnapshot {
     managerLeaseHolder?: string
     threads: ThreadSummary[]
     collabRequests: CollaborationRequestSummary[]
+    signals: RuntimeSignalCard[]
     alerts: RuntimeAlert[]
   }
   explorer: {

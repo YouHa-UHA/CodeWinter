@@ -153,12 +153,19 @@ pub struct ThreadSummary {
     pub role: Option<String>,
     pub status: Option<String>,
     pub phase: Option<String>,
+    pub current_task: Option<String>,
     pub scope_claims: Option<String>,
+    pub risk_gate: Option<String>,
+    pub manager_priority: Option<String>,
     pub confidence: Option<String>,
     pub deviation_flag: Option<String>,
     pub decision_needed: Option<String>,
     pub recommended_next_step: Option<String>,
     pub last_updated: Option<String>,
+    pub last_meaningful_progress_at: Option<String>,
+    pub ready_for_handoff: Option<String>,
+    pub ready_for_archive_review: Option<String>,
+    pub manager_attention: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -170,16 +177,31 @@ pub struct CollaborationRequestSummary {
     pub status: Option<String>,
     pub r#type: Option<String>,
     pub urgency: Option<String>,
+    pub blocking_severity: Option<String>,
     pub target_thread_id: Option<String>,
     pub target_capability: Option<String>,
+    pub why_now: Option<String>,
+    pub requested_outcome: Option<String>,
+    pub done_when: Option<String>,
     pub acceptance_signal: Option<String>,
     pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSignalCard {
+    pub id: String,
+    pub title: LocalizedText,
+    pub level: String,
+    pub summary: LocalizedText,
+    pub top_reason: LocalizedText,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeAlert {
     pub level: String,
-    pub message: String,
+    pub message: LocalizedText,
     pub source: Option<String>,
 }
 
@@ -189,6 +211,7 @@ pub struct RuntimeProjection {
     pub manager_lease_holder: Option<String>,
     pub threads: Vec<ThreadSummary>,
     pub collab_requests: Vec<CollaborationRequestSummary>,
+    pub signals: Vec<RuntimeSignalCard>,
     pub alerts: Vec<RuntimeAlert>,
 }
 

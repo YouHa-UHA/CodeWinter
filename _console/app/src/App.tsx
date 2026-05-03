@@ -1,4 +1,5 @@
 import {
+  BellOutlined,
   BookOutlined,
   CloseOutlined,
   CompassOutlined,
@@ -9,29 +10,24 @@ import {
   MinusOutlined,
   RadarChartOutlined,
   ReloadOutlined,
+  SearchOutlined,
+  SettingOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import {
   App as AntdApp,
+  Avatar,
   Button,
   ConfigProvider,
   Drawer,
+  Input,
   Segmented,
-  Space,
-  Spin,
   Tag,
   Tooltip,
   Typography,
   theme,
 } from 'antd'
-import {
-  Suspense,
-  lazy,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { Suspense, lazy, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { BrandMark } from './components/BrandMark'
 import type { PreviewState } from './components/PreviewPane'
 import {
@@ -55,6 +51,7 @@ import {
   toggleMaximizeWindow,
 } from './lib/tauri'
 import { useConsoleSnapshot } from './stores/useConsoleSnapshot'
+import type { RefreshStatus } from './types/snapshot'
 
 const PreviewPane = lazy(() =>
   import('./components/PreviewPane').then((module) => ({ default: module.PreviewPane })),
@@ -72,37 +69,47 @@ const ExplorerPage = lazy(() =>
   import('./pages/ExplorerPage').then((module) => ({ default: module.ExplorerPage })),
 )
 
-const { Paragraph, Text, Title } = Typography
+const { Text } = Typography
 
 type TabKey = 'overview' | 'workbench' | 'runtime' | 'explorer'
 
 const consoleTheme = {
   algorithm: theme.defaultAlgorithm,
   token: {
-    colorPrimary: '#6B8AFF',
-    colorSuccess: '#1D8A68',
-    colorWarning: '#C88A31',
-    colorError: '#C45D49',
-    colorInfo: '#6B8AFF',
-    colorBgBase: '#EEF4FB',
-    colorBgLayout: '#EEF4FB',
-    colorBgContainer: '#FCFDFF',
-    colorBorderSecondary: '#DAE5F3',
-    colorText: '#142336',
-    colorTextSecondary: '#657488',
+    colorPrimary: '#6b63ff',
+    colorSuccess: '#2fba8c',
+    colorWarning: '#f0a04b',
+    colorError: '#d96b7c',
+    colorBgBase: '#f6f7fb',
+    colorBgLayout: '#f6f7fb',
+    colorBgContainer: '#ffffff',
+    colorText: '#182132',
+    colorTextSecondary: '#7f879a',
+    colorBorderSecondary: '#e8ebf4',
     borderRadius: 18,
-    borderRadiusLG: 30,
-    boxShadowSecondary: '0 28px 72px rgba(17, 32, 54, 0.12)',
+    borderRadiusLG: 28,
     fontFamily:
-      "'SF Pro Display','SF Pro Text','PingFang SC','Segoe UI','Inter','Noto Sans SC','Microsoft YaHei UI',sans-serif",
+      "'SF Pro Display','SF Pro Text','PingFang SC','Segoe UI Variable','Inter','Noto Sans SC','Microsoft YaHei UI',sans-serif",
+    boxShadowSecondary: '0 24px 60px rgba(46, 57, 92, 0.08)',
   },
   components: {
-    Drawer: {
-      colorBgElevated: 'rgba(246, 250, 255, 0.8)',
-    },
     Button: {
-      controlHeight: 42,
       borderRadius: 999,
+      controlHeight: 42,
+      primaryShadow: 'none',
+    },
+    Input: {
+      borderRadius: 999,
+      activeShadow: 'none',
+      activeBorderColor: '#dfe4f4',
+      hoverBorderColor: '#dfe4f4',
+    },
+    Segmented: {
+      trackBg: 'rgba(248,249,255,0.72)',
+      itemSelectedBg: 'rgba(255,255,255,0.96)',
+    },
+    Drawer: {
+      colorBgElevated: 'rgba(249,250,255,0.86)',
     },
     Tag: {
       borderRadiusSM: 999,
@@ -134,11 +141,11 @@ function getTabs(language: Language): Array<{
   return [
     {
       key: 'overview',
-      label: language === 'zh' ? '首页' : 'Overview',
+      label: language === 'zh' ? '总览' : 'Overview',
       description:
         language === 'zh'
-          ? '系统介绍、使用说明与当前发布基线'
-          : 'System introduction, usage guidance, and the current release baseline',
+          ? '系统首页、发布基线与核心入口'
+          : 'Landing view, release baseline, and core entrypoints',
       icon: <HomeOutlined />,
     },
     {
@@ -146,8 +153,8 @@ function getTabs(language: Language): Array<{
       label: language === 'zh' ? '工作台' : 'Workbench',
       description:
         language === 'zh'
-          ? '高频提示词、安全投递区与正式输出入口'
-          : 'High-frequency prompts, safe intake zones, and deliverable access',
+          ? '提示词、投递入口与正式输出'
+          : 'Prompts, intake flows, and deliverable access',
       icon: <CompassOutlined />,
     },
     {
@@ -155,8 +162,8 @@ function getTabs(language: Language): Array<{
       label: language === 'zh' ? '运行态' : 'Runtime',
       description:
         language === 'zh'
-          ? '线程、协作请求与实时编排信号'
-          : 'Threads, collaboration requests, and live orchestration signals',
+          ? '线程、协作请求与编排信号'
+          : 'Threads, collaboration requests, and orchestration signals',
       icon: <RadarChartOutlined />,
     },
     {
@@ -164,72 +171,72 @@ function getTabs(language: Language): Array<{
       label: language === 'zh' ? '资料库' : 'Library',
       description:
         language === 'zh'
-          ? '控制面、实例基线与系统资料入口'
-          : 'Control plane, instance baseline, and system reference entrypoints',
+          ? '控制面、实例基线与系统资料'
+          : 'Control plane, instance baseline, and system materials',
       icon: <BookOutlined />,
     },
   ]
 }
 
-function getAppCopy(language: Language) {
+function getShellCopy(language: Language) {
   if (language === 'zh') {
     return {
-      operatorConsole: 'Operator Console',
-      releaseFallback: '当前发布',
-      shellKicker: '动态材质工作区',
-      shellSummary:
-        '让内容保持主导，让导航、状态与操作退后成一层更轻、更柔和、更会呼吸的操作材质。',
-      openCodeWinter: '打开工作区',
+      title: 'Operator Console',
+      subtitle: 'WINTER ETHER V1.0',
+      searchPlaceholder: '搜索提示词、任务、线程或系统资料…',
+      openWorkspace: '打开工作区',
       refresh: '刷新',
+      notifications: '通知',
+      account: '当前账户',
+      settings: '设置',
+      statusLabel: '系统状态',
       generatedAt: '生成时间',
       lastGoodAt: '最近稳定快照',
       refreshFailed: '刷新失败',
-      previewTitle: '预览',
-      previewPanelTitle: '内容预览',
-      statusRail: '系统状态',
-      chromeTitle: 'CodeWinter',
-      chromeSubtitle: 'Multi-thread AI collaboration control plane',
+      synced: '实时同步中',
+      projectionHint: '投影视图版本',
       minimize: '最小化',
       maximize: '最大化',
-      restore: '还原窗口',
+      restore: '还原',
       close: '关闭',
-      language: '语言',
-      snapshotHint: '投影视图版本',
+      previewPanelTitle: '内容预览',
+      pageLoading: '正在加载页面内容…',
+      footerRole: 'Level 4 Access',
     }
   }
 
   return {
-    operatorConsole: 'Operator Console',
-    releaseFallback: 'Current release',
-    shellKicker: 'Responsive Material Workspace',
-              shellSummary:
-        'Let content lead while navigation, status, and controls settle into a lighter responsive layer.',
-    openCodeWinter: 'Open workspace',
+    title: 'Operator Console',
+    subtitle: 'WINTER ETHER V1.0',
+    searchPlaceholder: 'Search prompts, tasks, threads, or system materials…',
+    openWorkspace: 'Open workspace',
     refresh: 'Refresh',
+    notifications: 'Notifications',
+    account: 'Current account',
+    settings: 'Settings',
+    statusLabel: 'System status',
     generatedAt: 'Generated',
     lastGoodAt: 'Last good snapshot',
     refreshFailed: 'Refresh failed',
-    previewTitle: 'Preview',
-    previewPanelTitle: 'Content Preview',
-    statusRail: 'System status',
-    chromeTitle: 'CodeWinter',
-    chromeSubtitle: 'Multi-thread AI collaboration control plane',
-      minimize: 'Minimize',
-      maximize: 'Maximize',
-      restore: 'Restore',
+    synced: 'Realtime synced',
+    projectionHint: 'Projection schema',
+    minimize: 'Minimize',
+    maximize: 'Maximize',
+    restore: 'Restore',
     close: 'Close',
-    language: 'Language',
-    snapshotHint: 'Projection version',
+    previewPanelTitle: 'Content Preview',
+    pageLoading: 'Loading page content…',
+    footerRole: 'Level 4 Access',
   }
 }
 
 function PageLoadingFallback({ language }: { language: Language }) {
+  const copy = getShellCopy(language)
+
   return (
     <div className="console-page-loading">
-      <Spin size="large" />
-      <Text type="secondary">
-        {language === 'zh' ? '正在加载页面内容…' : 'Loading page content…'}
-      </Text>
+      <div className="loading-orb" />
+      <Text type="secondary">{copy.pageLoading}</Text>
     </div>
   )
 }
@@ -239,12 +246,12 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
+  const [topSearch, setTopSearch] = useState('')
   const [preview, setPreview] = useState<PreviewState>({
     title: 'Preview',
     body: '',
     loading: false,
   })
-  const shellRef = useRef<HTMLDivElement | null>(null)
 
   const {
     snapshot,
@@ -261,86 +268,6 @@ export default function App() {
   useEffect(() => {
     persistLanguage(language)
   }, [language])
-
-  useEffect(() => {
-    const shell = shellRef.current
-    if (!shell) {
-      return undefined
-    }
-
-    let frame = 0
-    const state = {
-      pointerX: 68,
-      pointerY: 18,
-      shiftX: 0,
-      shiftY: 0,
-      scroll: 0,
-    }
-
-    const apply = () => {
-      frame = 0
-      shell.style.setProperty('--pointer-x', `${state.pointerX}%`)
-      shell.style.setProperty('--pointer-y', `${state.pointerY}%`)
-      shell.style.setProperty('--pointer-shift-x', `${state.shiftX.toFixed(2)}px`)
-      shell.style.setProperty('--pointer-shift-y', `${state.shiftY.toFixed(2)}px`)
-      shell.style.setProperty('--scroll-progress', state.scroll.toFixed(3))
-      shell.dataset.scrolled = state.scroll > 0.035 ? 'true' : 'false'
-    }
-
-    const schedule = () => {
-      if (frame !== 0) {
-        return
-      }
-      frame = window.requestAnimationFrame(apply)
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const rect = shell.getBoundingClientRect()
-      if (!rect.width || !rect.height) {
-        return
-      }
-
-      const nextX = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-      const nextY = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
-
-      state.pointerX = +(nextX * 100).toFixed(2)
-      state.pointerY = +(nextY * 100).toFixed(2)
-      state.shiftX = (nextX - 0.5) * 30
-      state.shiftY = (nextY - 0.5) * 20
-      schedule()
-    }
-
-    const resetPointer = () => {
-      state.pointerX = 68
-      state.pointerY = 18
-      state.shiftX = 0
-      state.shiftY = 0
-      schedule()
-    }
-
-    const handleScroll = () => {
-      const scrollRoot = document.scrollingElement ?? document.documentElement
-      const max = Math.max(1, scrollRoot.scrollHeight - window.innerHeight)
-      state.scroll = Math.min(1, window.scrollY / max)
-      schedule()
-    }
-
-    shell.addEventListener('pointermove', handlePointerMove)
-    shell.addEventListener('pointerleave', resetPointer)
-    window.addEventListener('scroll', handleScroll, { passive: true })
-
-    handleScroll()
-    schedule()
-
-    return () => {
-      shell.removeEventListener('pointermove', handlePointerMove)
-      shell.removeEventListener('pointerleave', resetPointer)
-      window.removeEventListener('scroll', handleScroll)
-      if (frame !== 0) {
-        window.cancelAnimationFrame(frame)
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -367,10 +294,11 @@ export default function App() {
     }
   }, [])
 
-  const copy = getAppCopy(language)
   const tabs = useMemo(() => getTabs(language), [language])
-  const currentTab = tabs.find((tab) => tab.key === activeTab) ?? tabs[0]
+  const copy = getShellCopy(language)
   const hasNativeWindowControls = isTauriRuntime()
+  const query = topSearch.trim().toLowerCase()
+  const effectiveRefreshStatus: RefreshStatus = loading ? 'refreshing' : snapshot.health.refreshStatus
 
   const handlePreview = async (title: string, path: string) => {
     setPreviewOpen(true)
@@ -412,16 +340,52 @@ export default function App() {
   return (
     <ConfigProvider theme={consoleTheme}>
       <AntdApp>
-        <div
-          ref={shellRef}
-          className="console-shell"
-          data-active-tab={activeTab}
-          data-preview-open={previewOpen ? 'true' : 'false'}
-          data-window-maximized={windowMaximized ? 'true' : 'false'}
-        >
-          <div className="window-frame" data-maximized={windowMaximized ? 'true' : 'false'}>
+        <div className="console-shell console-shell-v4" data-active-tab={activeTab}>
+          <aside className="console-sider console-sider-v4">
+            <div className="console-brand-block">
+              <BrandMark size={44} />
+              <div className="console-brand-copy">
+                <strong>{copy.title}</strong>
+                <span>{copy.subtitle}</span>
+              </div>
+            </div>
+
+            <nav className="console-nav console-nav-v4" aria-label="Primary navigation">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className="nav-link nav-link-v4"
+                  data-active={activeTab === tab.key ? 'true' : 'false'}
+                  onClick={() => setActiveTab(tab.key)}
+                >
+                  <span className="nav-link-icon">{tab.icon}</span>
+                  <span className="nav-link-copy">
+                    <strong>{tab.label}</strong>
+                    <span>{tab.description}</span>
+                  </span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="console-sider-foot">
+              <button type="button" className="sider-utility-link">
+                <SettingOutlined />
+                <span>{copy.settings}</span>
+              </button>
+              <div className="operator-card">
+                <Avatar size={34} icon={<UserOutlined />} />
+                <div>
+                  <strong>Winter_Op</strong>
+                  <span>{copy.footerRole}</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <div className="console-main">
             <header
-              className="window-chrome"
+              className="window-chrome window-chrome-v4"
               data-tauri-drag-region={hasNativeWindowControls ? 'true' : undefined}
               onDoubleClick={() => {
                 if (hasNativeWindowControls) {
@@ -430,239 +394,191 @@ export default function App() {
               }}
             >
               <div
-                className="window-brand"
+                className="window-chrome-context"
+                data-tauri-drag-region={hasNativeWindowControls ? 'true' : undefined}
               >
-                <BrandMark size={38} />
-                <div className="window-brand-copy">
-                  <Text strong>{copy.chromeTitle}</Text>
-                  <Text type="secondary">{copy.chromeSubtitle}</Text>
-                </div>
+                <span className="window-context-brand">CodeWinter Operator</span>
               </div>
 
-              <div className="window-toolbar">
-                <div
-                  className="window-toolbar-passive"
-                  data-tauri-drag-region={hasNativeWindowControls ? 'true' : undefined}
-                >
-                  <Tooltip title={explainRefreshStatus(snapshot.health.refreshStatus, language)}>
-                    <Tag
-                      className="status-chip"
-                      color={snapshot.health.refreshStatus === 'degraded' ? 'warning' : 'default'}
-                    >
-                      {formatRefreshStatus(snapshot.health.refreshStatus, language)}
+              <div className="window-toolbar window-toolbar-v4">
+                <div className="window-search no-drag">
+                  <Input
+                    prefix={<SearchOutlined />}
+                    placeholder={copy.searchPlaceholder}
+                    value={topSearch}
+                    onChange={(event) => setTopSearch(event.target.value)}
+                    allowClear
+                  />
+                </div>
+
+                <div className="window-toolbar-actions no-drag">
+                  <Tooltip title={copy.notifications}>
+                    <button type="button" className="toolbar-icon-button">
+                      <BellOutlined />
+                    </button>
+                  </Tooltip>
+                  <Tooltip title={copy.account}>
+                    <button type="button" className="toolbar-icon-button">
+                      <UserOutlined />
+                    </button>
+                  </Tooltip>
+                  <Tooltip title={explainRefreshStatus(effectiveRefreshStatus, language)}>
+                    <Tag className="toolbar-pill toolbar-pill-status">
+                      {formatRefreshStatus(effectiveRefreshStatus, language)}
                     </Tag>
                   </Tooltip>
                   <Tooltip title={explainReleaseChannel(snapshot.release.channel, language)}>
-                    <Tag className="status-chip">
+                    <Tag className="toolbar-pill">
                       {formatReleaseChannel(snapshot.release.channel, language)}
                     </Tag>
                   </Tooltip>
-                  <Tooltip title={copy.snapshotHint}>
-                    <Text type="secondary" className="console-meta-inline">
+                  <Tooltip title={explainSnapshotVersion(snapshot.snapshotVersion, language)}>
+                    <Text className="projection-label">
                       {formatSnapshotVersion(snapshot.snapshotVersion, language)}
                     </Text>
                   </Tooltip>
-                </div>
-                <Segmented<Language>
-                  value={language}
-                  size="middle"
-                  options={[
-                    { label: 'EN', value: 'en' },
-                    { label: '中文', value: 'zh' },
-                  ]}
-                  onChange={(value) => setLanguage(value)}
-                />
-                {hasNativeWindowControls ? (
-                  <div className="window-controls">
-                    <Tooltip title={copy.minimize}>
+                  <Segmented<Language>
+                    value={language}
+                    options={[
+                      { label: 'EN', value: 'en' },
+                      { label: '中文', value: 'zh' },
+                    ]}
+                    onChange={(value) => setLanguage(value)}
+                  />
+                  {hasNativeWindowControls ? (
+                    <div className="window-controls no-drag">
                       <button
                         type="button"
                         className="window-control"
-                        onMouseDown={(event) => event.stopPropagation()}
                         onClick={() => void minimizeWindow()}
                         aria-label={copy.minimize}
                       >
                         <MinusOutlined />
                       </button>
-                    </Tooltip>
-                    <Tooltip title={windowMaximized ? copy.restore : copy.maximize}>
                       <button
                         type="button"
                         className="window-control"
-                        onMouseDown={(event) => event.stopPropagation()}
                         onClick={() => void handleToggleWindow()}
                         aria-label={windowMaximized ? copy.restore : copy.maximize}
                       >
                         {windowMaximized ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
                       </button>
-                    </Tooltip>
-                    <Tooltip title={copy.close}>
                       <button
                         type="button"
                         className="window-control close"
-                        onMouseDown={(event) => event.stopPropagation()}
                         onClick={() => void closeWindow()}
                         aria-label={copy.close}
                       >
                         <CloseOutlined />
                       </button>
-                    </Tooltip>
-                  </div>
-                ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </header>
 
-            <div className="window-body">
-              <aside className="console-sider">
-                <div className="console-release-pill">
-                  <div className="release-pill-head">
-                    <Tag color="blue">{snapshot.release.version}</Tag>
-                    <Tag>{formatReleaseChannel(snapshot.release.channel, language)}</Tag>
-                  </div>
-                  <Text strong>{snapshot.release.codename ?? copy.releaseFallback}</Text>
-                  <Text type="secondary">
-                    {snapshot.release.theme ??
-                      (language === 'zh' ? '尚未标注发布主题' : 'No release theme label')}
-                  </Text>
-                </div>
+            <div className="console-status-row">
+              <div className="status-row-left">
+                <span className="status-row-label">{copy.statusLabel}</span>
+                <span className="status-row-dot" />
+                <span>{copy.synced}</span>
+                <span className="status-row-separator" />
+                <span>
+                  {copy.generatedAt}: {formatTimestamp(snapshot.generatedAt, language)}
+                </span>
+                <span className="status-row-separator" />
+                <span>
+                  {copy.lastGoodAt}: {formatTimestamp(snapshot.health.lastGoodAt, language)}
+                </span>
+              </div>
 
-                <nav className="console-nav" aria-label="Primary navigation">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      className="nav-button"
-                      data-active={activeTab === tab.key ? 'true' : 'false'}
-                      onClick={() => setActiveTab(tab.key)}
-                    >
-                      <span className="nav-button-icon">{tab.icon}</span>
-                      <span className="nav-button-copy">
-                        <span className="nav-button-label">{tab.label}</span>
-                        <span className="nav-button-description">{tab.description}</span>
-                      </span>
-                    </button>
-                  ))}
-                </nav>
-
-                <div className="console-sider-foot">
-                  <Text className="section-kicker">{copy.shellKicker}</Text>
-                  <Paragraph type="secondary">{copy.shellSummary}</Paragraph>
-                </div>
-              </aside>
-
-              <main className="console-main">
-                <section className="console-header">
-                  <div className="console-header-copy">
-                    <Text className="section-kicker">{currentTab.label}</Text>
-                    <Title level={3}>{currentTab.description}</Title>
-                  </div>
-                  <Space wrap size={10}>
-                    <Tooltip title={explainSnapshotVersion(snapshot.snapshotVersion, language)}>
-                      <Text type="secondary" className="console-meta-inline">
-                        {formatSnapshotVersion(snapshot.snapshotVersion, language)}
-                      </Text>
-                    </Tooltip>
-                    <Button
-                      icon={<FolderOpenOutlined />}
-                      onClick={() => void revealPath(snapshot.codewinterRoot)}
-                    >
-                      {copy.openCodeWinter}
-                    </Button>
-                    <Button
-                      type="primary"
-                      icon={<ReloadOutlined />}
-                      loading={loading}
-                      onClick={() => void refresh()}
-                    >
-                      {copy.refresh}
-                    </Button>
-                  </Space>
-                </section>
-
-                <section className="console-content">
-                  <div className="console-status-bar">
-                    <div className="status-bar-heading">
-                      <Text className="section-kicker">{copy.statusRail}</Text>
-                    </div>
-                    <Space wrap>
-                      <Text type="secondary">
-                        {copy.generatedAt}: {formatTimestamp(snapshot.generatedAt, language)}
-                      </Text>
-                      <Text type="secondary">
-                        {copy.lastGoodAt}: {formatTimestamp(snapshot.health.lastGoodAt, language)}
-                      </Text>
-                      {snapshot.health.warnings.map((warning) => (
-                        <Tooltip key={warning} title={localizeHealthWarning(warning, language)}>
-                          <Tag color="warning">{localizeHealthWarning(warning, language)}</Tag>
-                        </Tooltip>
-                      ))}
-                    </Space>
-                    {error ? (
-                      <Tag color="error">
-                        {copy.refreshFailed}: {error}
-                      </Tag>
-                    ) : null}
-                  </div>
-
-                  <section className="console-view">
-                    <Suspense fallback={<PageLoadingFallback language={language} />}>
-                      {activeTab === 'overview' ? (
-                        <OverviewPage
-                          language={language}
-                          release={snapshot.release}
-                          featuredDocs={snapshot.home.featuredDocs}
-                          sections={snapshot.home.sections}
-                          onPreview={handlePreview}
-                          onOpenPath={revealPath}
-                        />
-                      ) : null}
-
-                      {activeTab === 'workbench' ? (
-                        <WorkbenchPage
-                          language={language}
-                          prompts={snapshot.workbench.prompts}
-                          uploadZones={snapshot.workbench.uploadZones}
-                          deliverableGroups={snapshot.workbench.deliverableGroups}
-                          uploadFeedbacks={uploadFeedbacks}
-                          onCopyPrompt={copyPrompt}
-                          onPreview={handlePreview}
-                          onOpenPath={revealPath}
-                          onUploadFile={uploadFile}
-                        />
-                      ) : null}
-
-                      {activeTab === 'runtime' ? (
-                        <RuntimePage
-                          language={language}
-                          managerLeaseHolder={snapshot.runtime.managerLeaseHolder}
-                          threads={snapshot.runtime.threads}
-                          collabRequests={snapshot.runtime.collabRequests}
-                          alerts={snapshot.runtime.alerts}
-                          onOpenPath={revealPath}
-                        />
-                      ) : null}
-
-                      {activeTab === 'explorer' ? (
-                        <ExplorerPage
-                          language={language}
-                          managerBriefSections={snapshot.managerBrief.sections}
-                          instanceSections={snapshot.instanceManifest.sections}
-                          entries={snapshot.explorer.entries}
-                          onPreview={handlePreview}
-                          onOpenPath={revealPath}
-                        />
-                      ) : null}
-                    </Suspense>
-                  </section>
-                </section>
-              </main>
+              <div className="status-row-right">
+                {snapshot.health.warnings.map((warning) => (
+                  <Tooltip key={warning} title={localizeHealthWarning(warning, language)}>
+                    <Tag color="warning">{localizeHealthWarning(warning, language)}</Tag>
+                  </Tooltip>
+                ))}
+                {error ? (
+                  <Tag color="error">
+                    {copy.refreshFailed}: {error}
+                  </Tag>
+                ) : null}
+                <Button icon={<FolderOpenOutlined />} onClick={() => void revealPath(snapshot.codewinterRoot)}>
+                  {copy.openWorkspace}
+                </Button>
+                <Button type="primary" icon={<ReloadOutlined />} loading={loading} onClick={() => void refresh()}>
+                  {copy.refresh}
+                </Button>
+              </div>
             </div>
+
+            <main className="console-main-scroll">
+              <section className="console-main-surface">
+                <Suspense fallback={<PageLoadingFallback language={language} />}>
+                  {activeTab === 'overview' ? (
+                    <OverviewPage
+                      language={language}
+                      loading={loading}
+                      query={query}
+                      release={snapshot.release}
+                      featuredDocs={snapshot.home.featuredDocs}
+                      sections={snapshot.home.sections}
+                      health={snapshot.health}
+                      generatedAt={snapshot.generatedAt}
+                      onPreview={handlePreview}
+                      onOpenPath={revealPath}
+                      onNavigate={setActiveTab}
+                    />
+                  ) : null}
+
+                  {activeTab === 'workbench' ? (
+                    <WorkbenchPage
+                      language={language}
+                      query={query}
+                      prompts={snapshot.workbench.prompts}
+                      uploadZones={snapshot.workbench.uploadZones}
+                      deliverableGroups={snapshot.workbench.deliverableGroups}
+                      uploadFeedbacks={uploadFeedbacks}
+                      onCopyPrompt={copyPrompt}
+                      onPreview={handlePreview}
+                      onOpenPath={revealPath}
+                      onUploadFile={uploadFile}
+                    />
+                  ) : null}
+
+                  {activeTab === 'runtime' ? (
+                    <RuntimePage
+                      language={language}
+                      query={query}
+                      managerLeaseHolder={snapshot.runtime.managerLeaseHolder}
+                      threads={snapshot.runtime.threads}
+                      collabRequests={snapshot.runtime.collabRequests}
+                      signals={snapshot.runtime.signals}
+                      alerts={snapshot.runtime.alerts}
+                      onOpenPath={revealPath}
+                    />
+                  ) : null}
+
+                  {activeTab === 'explorer' ? (
+                    <ExplorerPage
+                      language={language}
+                      query={query}
+                      managerBriefSections={snapshot.managerBrief.sections}
+                      instanceSections={snapshot.instanceManifest.sections}
+                      entries={snapshot.explorer.entries}
+                      onPreview={handlePreview}
+                      onOpenPath={revealPath}
+                    />
+                  ) : null}
+                </Suspense>
+              </section>
+            </main>
           </div>
 
           <Drawer
             open={previewOpen}
             onClose={() => setPreviewOpen(false)}
-            width={820}
+            width={760}
             title={copy.previewPanelTitle}
             className="console-preview-drawer"
             destroyOnClose={false}
@@ -672,7 +588,7 @@ export default function App() {
                 language={language}
                 preview={{
                   ...preview,
-                  title: preview.title || copy.previewTitle,
+                  title: preview.title || copy.previewPanelTitle,
                 }}
                 onOpenPath={revealPath}
               />
